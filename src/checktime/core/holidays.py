@@ -15,6 +15,13 @@ class HolidayManager:
             festivos_file (str): Ruta al archivo de festivos
         """
         self.festivos_file = festivos_file
+        # Asegurar que el directorio existe
+        os.makedirs(os.path.dirname(self.festivos_file), exist_ok=True)
+        # Crear el archivo si no existe
+        if not os.path.exists(self.festivos_file):
+            with open(self.festivos_file, 'w') as f:
+                f.write("")
+            bot_logger.info(f"Archivo de festivos creado: {self.festivos_file}")
     
     def load_holidays(self) -> Set[str]:
         """
@@ -23,14 +30,10 @@ class HolidayManager:
         Returns:
             Set[str]: Conjunto de fechas festivas
         """
-        if not os.path.exists(self.festivos_file):
-            bot_logger.warning(f"No se encontró el archivo de festivos: {self.festivos_file}")
-            return set()
-
         try:
             with open(self.festivos_file, 'r') as f:
                 festivos = {line.strip() for line in f if line.strip()}
-            return sorted(festivos, key=lambda d: datetime.datetime.strptime(d, "%Y-%m-%d"))
+            return festivos
         except Exception as e:
             error_msg = f"Error cargando festivos: {e}"
             error_logger.error(error_msg)
@@ -138,4 +141,5 @@ class HolidayManager:
         Returns:
             List[str]: Lista ordenada de fechas festivas
         """
-        return sorted(self.load_holidays(), key=lambda d: datetime.datetime.strptime(d, "%Y-%m-%d")) 
+        holidays = self.load_holidays()
+        return sorted(holidays, key=lambda d: datetime.datetime.strptime(d, "%Y-%m-%d")) 
