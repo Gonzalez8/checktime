@@ -20,28 +20,29 @@ wheels/
 .installed.cfg
 *.egg
 
-# Virtual Environment
+# Entornos virtuales
 venv/
 ENV/
+env/
 
-# IDE
+# IDEs y editores
 .idea/
 .vscode/
 *.swp
 *.swo
+*~
 
 # Logs
 logs/
 *.log
 
-# Environment variables
+# Archivos de configuración local
 .env
-.env.*
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
 
 # Chrome driver
 chromedriver
-chromedriver.exe
-
-# Sistema
-.DS_Store
-Thumbs.db 
+chromedriver.exe 
