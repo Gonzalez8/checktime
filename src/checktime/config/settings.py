@@ -1,0 +1,56 @@
+import os
+from dotenv import load_dotenv
+from pathlib import Path
+from selenium.webdriver.chrome.options import Options
+
+# Cargar variables de entorno
+load_dotenv()
+
+# Directorios
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+LOG_DIR = BASE_DIR / "logs"
+LOG_DIR.mkdir(exist_ok=True)
+
+# URLs
+CHECKJC_LOGIN_URL = "https://checkjc.example.com/login"
+
+# Credenciales
+CHECKJC_USERNAME = os.getenv("CHECKJC_USERNAME", "")
+CHECKJC_PASSWORD = os.getenv("CHECKJC_PASSWORD", "")
+
+# Configuración de Selenium
+SELENIUM_TIMEOUT = 30  # segundos
+
+SELENIUM_OPTIONS = Options()
+SELENIUM_OPTIONS.add_argument("--headless")  # Ejecutar en modo headless
+SELENIUM_OPTIONS.add_argument("--no-sandbox")
+SELENIUM_OPTIONS.add_argument("--disable-dev-shm-usage")
+SELENIUM_OPTIONS.add_argument("--disable-gpu")
+SELENIUM_OPTIONS.add_argument("--window-size=1920,1080")
+
+# Configuración de Telegram
+TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
+
+# Configuración de logging
+LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
+LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+LOG_FILE = 'logs/autofichar.log'
+ERROR_LOG_FILE = 'logs/error.log'
+
+# Horarios de fichaje (formato 24h)
+CHECK_IN_TIME = "09:00"
+CHECK_OUT_TIME = "18:00"
+
+# Rutas de archivos
+FESTIVOS_FILE = os.path.join(BASE_DIR, 'config', 'festivos.txt')
+LOG_FILE = os.path.join(BASE_DIR, 'logs', 'fichar.log')
+ERROR_LOG_FILE = os.path.join(BASE_DIR, 'logs', 'error.log')
+
+# Configuración de logging
+LOG_DATE_FORMAT = '%Y-%m-%d %H:%M:%S'
+LOG_MAX_BYTES = 1024 * 1024  # 1MB
+LOG_BACKUP_COUNT = 5
+
+# Configuración de logs
+LOG_DIR = 'logs' 
