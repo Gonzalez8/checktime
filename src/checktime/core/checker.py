@@ -15,7 +15,8 @@ from ..config.settings import (
     SELENIUM_OPTIONS
 )
 
-logger = logging.getLogger(__name__)
+# Usar el logger del módulo
+logger = autofichar_logger
 
 class CheckJCClient:
     """Cliente para interactuar con el sistema de fichaje CheckJC."""
