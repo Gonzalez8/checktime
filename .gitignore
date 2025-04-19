@@ -24,6 +24,7 @@ wheels/
 venv/
 ENV/
 env/
+.env
 
 # IDEs y editores
 .idea/
@@ -32,16 +33,33 @@ env/
 *.swo
 *~
 
-# Logs
+# Logs y archivos temporales
 logs/
 *.log
-
-# Archivos de configuración local
-.env
+last_update_id.txt
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.db
+*.sqlite3
 
 # Archivos del sistema
 .DS_Store
 Thumbs.db
+
+# Archivos de configuración local
+.env
+config/festivos.txt
+
+# Archivos de caché
+.cache/
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
 
 # Chrome driver
 chromedriver
