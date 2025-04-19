@@ -15,8 +15,8 @@ LOG_DIR.mkdir(exist_ok=True)
 CHECKJC_LOGIN_URL = "https://trainingbnetwork.checkjc.com/login"
 
 # Credenciales
-CHECKJC_USERNAME = os.getenv("CHECKJC_USERNAME", "")
-CHECKJC_PASSWORD = os.getenv("CHECKJC_PASSWORD", "")
+CHECKJC_USERNAME = os.getenv('CHECKJC_USERNAME')
+CHECKJC_PASSWORD = os.getenv('CHECKJC_PASSWORD')
 
 # Configuración de Selenium
 SELENIUM_TIMEOUT = int(os.getenv("SELENIUM_TIMEOUT", "30"))  # segundos
@@ -38,13 +38,9 @@ TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
 # Configuración de logging
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
-LOG_FORMAT = os.getenv('LOG_FORMAT', '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 LOG_FILE = LOG_DIR / 'autofichar.log'
 ERROR_LOG_FILE = LOG_DIR / 'error.log'
-
-# Horarios de fichaje (formato 24h)
-CHECK_IN_TIME = os.getenv("CHECK_IN_TIME", "09:00")
-CHECK_OUT_TIME = os.getenv("CHECK_OUT_TIME", "18:00")
 
 # Rutas de archivos
 FESTIVOS_FILE = BASE_DIR / 'config' / 'festivos.txt'
