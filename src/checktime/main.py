@@ -6,8 +6,6 @@ from pathlib import Path
 
 from checktime.core.checker import CheckJCClient
 from checktime.config.settings import (
-    CHECK_IN_TIME,
-    CHECK_OUT_TIME,
     LOG_DIR,
     SELENIUM_OPTIONS,
     SELENIUM_TIMEOUT,
@@ -40,6 +38,16 @@ def is_working_day():
     if holiday_manager.is_holiday():
         return False
     return True
+
+def get_schedule_times():
+    """Get check-in and check-out times based on the day of the week"""
+    today = datetime.now()
+    weekday = today.weekday()
+    
+    if weekday < 4:  # Monday to Thursday
+        return "09:00", "18:00"
+    else:  # Friday
+        return "08:00", "15:00"
 
 def perform_check(check_type):
     """
@@ -83,11 +91,10 @@ def main():
     logger.info("Iniciando el servicio de fichaje automático...")
     telegram_client.send_message("🚀 Iniciando el servicio de fichaje automático...")
 
-    # Programar tareas
-    schedule.every().day.at(CHECK_IN_TIME).do(perform_check_in)
-    schedule.every().day.at(CHECK_OUT_TIME).do(perform_check_out)
+    # Programar tareas con horarios dinámicos
+    schedule.every().minute.do(lambda: schedule_check())
 
-    # Ejecutar el bucle de programación
+    # Mantener el script en ejecución
     while True:
         try:
             schedule.run_pending()
@@ -97,6 +104,19 @@ def main():
             logger.error(error_msg)
             telegram_client.send_message(f"❌ {error_msg}")
             time.sleep(300)  # Esperar 5 minutos antes de reintentar
+
+def schedule_check():
+    """Check if it's time to perform check-in/out based on the schedule"""
+    if not is_working_day():
+        return
+
+    check_in_time, check_out_time = get_schedule_times()
+    current_time = datetime.now().strftime("%H:%M")
+    
+    if current_time == check_in_time:
+        perform_check_in()
+    elif current_time == check_out_time:
+        perform_check_out()
 
 if __name__ == "__main__":
     main() 
