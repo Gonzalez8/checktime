@@ -1,36 +1,37 @@
-# Sistema de Fichaje Automático
+# CheckTime - Sistema de Fichaje Automático
 
-Este proyecto implementa un sistema automatizado de fichaje que realiza automáticamente los registros de entrada y salida en el sistema CheckJC.
+Sistema automatizado para realizar fichajes de entrada y salida en CheckJC, con integración de Telegram para notificaciones.
 
 ## Características
 
-- Fichaje automático de entrada y salida en horarios configurados
-- Detección automática de días laborables (excluye fines de semana)
-- Sistema de logging detallado
-- Notificaciones por Telegram
-- Gestión de días festivos
-- Interfaz web para configuración y monitoreo
+- Fichaje automático de entrada y salida en CheckJC
+- Notificaciones en tiempo real a través de Telegram
+- Configuración flexible de horarios
+- Sistema de servicios gestionado por systemd
+- Manejo de errores y reintentos automáticos
+- Logs detallados para monitoreo
+- Gestión de días festivos a través de Telegram
 
 ## Requisitos
 
 - Python 3.8+
-- Chrome/Chromium
-- ChromeDriver compatible con la versión de Chrome instalada
-- Cuenta en CheckJC
-- Bot de Telegram (opcional, para notificaciones)
+- pip (gestor de paquetes de Python)
+- Credenciales de CheckJC
+- Token de bot de Telegram
+- ID de chat de Telegram
 
 ## Instalación
 
 1. Clonar el repositorio:
 ```bash
-git clone https://github.com/tu-usuario/checktime.git
-cd checktime
+git clone <url-del-repositorio>
+cd fichar
 ```
 
-2. Crear y activar un entorno virtual:
+2. Crear y activar entorno virtual:
 ```bash
-python -m venv venv
-source venv/bin/activate  # En Windows: venv\Scripts\activate
+python3 -m venv venv
+source venv/bin/activate
 ```
 
 3. Instalar dependencias:
@@ -39,58 +40,146 @@ pip install -r requirements.txt
 ```
 
 4. Configurar variables de entorno:
-```bash
-cp .env.example .env
-# Editar .env con tus credenciales y configuración
+Crear un archivo `.env` en la raíz del proyecto con:
 ```
-
-## Configuración
-
-El archivo `.env` debe contener las siguientes variables:
-
-```env
+TELEGRAM_BOT_TOKEN=tu_token_de_bot
+TELEGRAM_CHAT_ID=tu_chat_id
 CHECKJC_USERNAME=tu_usuario
 CHECKJC_PASSWORD=tu_contraseña
 CHECK_IN_TIME=09:00
 CHECK_OUT_TIME=18:00
-TELEGRAM_BOT_TOKEN=tu_token  # Opcional
-TELEGRAM_CHAT_ID=tu_chat_id  # Opcional
+```
+
+## Configuración de Servicios
+
+El sistema utiliza systemd para gestionar los servicios. Se incluyen dos servicios:
+
+1. `checktime-fichar.service`: Gestiona el fichaje automático
+2. `checktime-bot.service`: Gestiona el bot de Telegram
+
+Para instalar los servicios:
+```bash
+chmod +x install_services.sh
+./install_services.sh
 ```
 
 ## Uso
 
-1. Iniciar el servicio:
+### Iniciar los Servicios
+
 ```bash
-python src/checktime/main.py
+systemctl start checktime-fichar.service
+systemctl start checktime-bot.service
 ```
 
-2. El servicio se ejecutará en segundo plano y realizará los fichajes automáticamente en los horarios configurados.
+### Verificar Estado
+
+```bash
+systemctl status checktime-fichar.service
+systemctl status checktime-bot.service
+```
+
+### Ver Logs
+
+```bash
+journalctl -u checktime-fichar.service
+journalctl -u checktime-bot.service
+```
+
+### Gestión de Festivos
+
+El bot de Telegram permite gestionar los días festivos mediante los siguientes comandos:
+
+- `/addfestivo YYYY-MM-DD`: Añade un nuevo día festivo
+- `/delfestivo YYYY-MM-DD`: Elimina un día festivo
+- `/listfestivos`: Muestra la lista de días festivos configurados
+
+Ejemplos:
+```
+/addfestivo 2024-12-25
+/delfestivo 2024-12-25
+/listfestivos
+```
+
+> **Nota**: Los festivos se almacenan en el archivo `/root/fichar/config/festivos.txt`. No debe existir otro archivo con el mismo nombre en otra ubicación.
+
+## Notificaciones de Telegram
+
+El sistema envía notificaciones en los siguientes casos:
+- Inicio del servicio de fichaje
+- Fichaje de entrada realizado
+- Fichaje de salida realizado
+- Errores durante el proceso de fichaje
+- Gestión de festivos (añadir/eliminar/listar)
 
 ## Estructura del Proyecto
 
 ```
-checktime/
+fichar/
 ├── src/
 │   └── checktime/
-│       ├── core/
-│       │   ├── checker.py      # Cliente de CheckJC
-│       │   └── holidays.py     # Gestión de festivos
+│       ├── bot/
+│       │   └── listener.py
 │       ├── utils/
-│       │   ├── logger.py       # Configuración de logging
-│       │   └── telegram.py     # Cliente de Telegram
+│       │   └── telegram.py
 │       ├── config/
-│       │   └── settings.py     # Configuración general
-│       └── main.py            # Punto de entrada
-├── logs/                      # Directorio de logs
+│       │   └── settings.py
+│       ├── checker.py
+│       └── main.py
+├── config/
+│   └── festivos.txt
 ├── requirements.txt
-└── README.md
+├── .env
+└── install_services.sh
 ```
 
-## Logging
+## Mantenimiento
 
-Los logs se almacenan en el directorio `logs/`:
-- `fichar.log`: Log general del sistema
-- `error.log`: Log específico de errores
+### Actualizar el Sistema
+
+1. Detener los servicios:
+```bash
+systemctl stop checktime-fichar.service checktime-bot.service
+```
+
+2. Actualizar el código:
+```bash
+git pull
+```
+
+3. Actualizar dependencias si es necesario:
+```bash
+pip install -r requirements.txt
+```
+
+4. Reiniciar los servicios:
+```bash
+systemctl start checktime-fichar.service checktime-bot.service
+```
+
+### Solución de Problemas
+
+1. Verificar logs:
+```bash
+journalctl -u checktime-fichar.service -n 50
+journalctl -u checktime-bot.service -n 50
+```
+
+2. Verificar variables de entorno:
+```bash
+python3 check_env.py
+```
+
+3. Verificar estado de los servicios:
+```bash
+systemctl status checktime-fichar.service
+systemctl status checktime-bot.service
+```
+
+4. Verificar archivo de festivos:
+```bash
+cat config/festivos.txt
+```
 
 ## Contribuir
 
@@ -102,4 +191,4 @@ Los logs se almacenan en el directorio `logs/`:
 
 ## Licencia
 
-Este proyecto está licenciado bajo la Licencia MIT - ver el archivo [LICENSE](LICENSE) para más detalles. 
+Este proyecto está bajo la Licencia MIT. Ver el archivo `LICENSE` para más detalles. 
