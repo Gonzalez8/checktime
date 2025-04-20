@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  bot:
+    build: .
+    container_name: checktime-bot
+    volumes:
+      - .:/app
+      - /var/log/checktime:/var/log/checktime
+    env_file:
+      - .env
+    environment:
+      - PYTHONPATH=/app
+    command: python -m src.checktime.bot.listener
+    restart: unless-stopped
+    shm_size: '2gb'
+
+  fichar:
+    build: .
+    container_name: checktime-fichar
+    volumes:
+      - .:/app
+      - /var/log/checktime:/var/log/checktime
+    env_file:
+      - .env
+    environment:
+      - PYTHONPATH=/app
+    command: python -m src.checktime.main
+    restart: unless-stopped
+    shm_size: '2gb' 
