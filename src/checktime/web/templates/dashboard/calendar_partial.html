@@ -1,0 +1,78 @@
+<div class="card shadow">
+    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center py-2">
+        <h5 class="mb-0"><i class="bi bi-calendar3"></i> {{ current_month }}</h5>
+        <div>
+            <button data-year="{{ prev_year }}" data-month="{{ prev_month }}" class="btn btn-sm btn-light me-1 calendar-nav">
+                <i class="bi bi-chevron-left"></i> Previous
+            </button>
+            {% if not is_current_month %}
+            <button data-year="{{ current_year }}" data-month="{{ current_month_num }}" class="btn btn-sm btn-light me-1 calendar-nav">
+                Today
+            </button>
+            {% endif %}
+            <button data-year="{{ next_year }}" data-month="{{ next_month }}" class="btn btn-sm btn-light calendar-nav">
+                Next <i class="bi bi-chevron-right"></i>
+            </button>
+        </div>
+    </div>
+    <div class="card-body p-1">
+        <table class="table table-bordered text-center mb-1">
+            <thead class="table-light">
+                <tr>
+                    <th class="py-1">Mon</th>
+                    <th class="py-1">Tue</th>
+                    <th class="py-1">Wed</th>
+                    <th class="py-1">Thu</th>
+                    <th class="py-1">Fri</th>
+                    <th class="py-1 bg-light text-muted">Sat</th>
+                    <th class="py-1 bg-light text-muted">Sun</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for week in calendar_data %}
+                <tr>
+                    {% for day in week %}
+                    {% set is_weekend = loop.index > 5 %}
+                    <td style="height: 60px; position: relative; padding: 2px;" 
+                        class="{% if day.is_today %}bg-light border border-primary{% elif is_weekend %}bg-light text-muted{% endif %}">
+                        {% if day.day %}
+                        <div style="position: absolute; top: 2px; left: 2px; font-weight: bold; font-size: 0.9rem;">
+                            {{ day.day }}
+                        </div>
+                        
+                        {% if day.is_holiday %}
+                        <div class="bg-info text-white rounded p-1 mt-4" style="font-size: 0.75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ day.holiday_name }}">
+                            {{ day.holiday_name }}
+                        </div>
+                        {% elif day.is_working_day and not is_weekend %}
+                        <div style="margin-top: 20px; font-size: 0.75rem;">
+                            <div class="bg-success text-white rounded-top p-1">
+                                <i class="bi bi-arrow-down-circle"></i> In: {{ day.check_in_time|default('09:00') }}
+                            </div>
+                            <div class="bg-danger text-white rounded-bottom p-1">
+                                <i class="bi bi-arrow-up-circle"></i> Out: {{ day.check_out_time|default('17:00') }}
+                            </div>
+                        </div>
+                        {% endif %}
+                        {% endif %}
+                    </td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <div class="d-flex mt-1 justify-content-end">
+            <span class="badge bg-success me-2">Working Day</span>
+            <span class="badge bg-info me-2">Holiday</span>
+            <span class="badge bg-light text-dark me-2">Weekend</span>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Initialize Bootstrap tooltips
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+</script> 

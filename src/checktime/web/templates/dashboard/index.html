@@ -2,6 +2,61 @@
 
 {% block title %}Dashboard - {{ super() }}{% endblock %}
 
+{% block styles %}
+<style>
+    .loading {
+        position: relative;
+        min-height: 200px;
+        opacity: 0.7;
+    }
+    
+    .loading:after {
+        content: "Loading...";
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        font-size: 1.2em;
+        color: #555;
+    }
+    
+    #calendar-container {
+        min-height: 200px;
+        border: 1px solid #eee;
+        padding: 15px;
+        position: relative;
+        /* Tamaño ajustable pero sin scroll */
+        height: auto;
+        overflow: visible;
+    }
+    
+    #calendar-container:empty:before {
+        content: "El calendario se cargará aquí...";
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        color: #999;
+    }
+    
+    #calendar-section {
+        height: auto;
+        margin-bottom: 40px; /* Espacio fijo al final */
+    }
+    
+    /* Eliminar animaciones y transiciones */
+    .card, .alert, .btn {
+        transition: none !important;
+    }
+    
+    /* Ajustar tamaño de celdas del calendario */
+    #calendar-container .table td {
+        height: 60px !important;
+        padding: 2px !important;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="row mb-4">
     <div class="col">
@@ -170,4 +225,109 @@
         </div>
     </div>
 </div>
+
+<!-- Calendar Row -->
+<div class="row mt-4" id="calendar-section">
+    <div class="col-12">
+        <div class="mb-2">
+            <h4><i class="bi bi-calendar3"></i> Calendario</h4>
+        </div>
+        <div id="calendar-container">
+            <!-- Calendar will be loaded here via AJAX -->
+        </div>
+        
+        <!-- Fallback calendar if AJAX fails -->
+        <div id="fallback-calendar" style="display: none;">
+            {% if calendar_data %}
+            <div class="card shadow">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="bi bi-calendar3"></i> Calendario (Estático)</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-bordered text-center">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Lun</th>
+                                    <th>Mar</th>
+                                    <th>Mié</th>
+                                    <th>Jue</th>
+                                    <th>Vie</th>
+                                    <th>Sáb</th>
+                                    <th>Dom</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for week in calendar_data %}
+                                <tr>
+                                    {% for day in week %}
+                                    <td style="height: 60px; position: relative;" 
+                                        class="{% if day.is_today %}bg-light border border-primary{% endif %}">
+                                        {% if day.day %}
+                                        <div style="position: absolute; top: 5px; left: 5px; font-weight: bold;">
+                                            {{ day.day }}
+                                        </div>
+                                        
+                                        {% if day.is_holiday %}
+                                        <div class="bg-danger text-white rounded p-1 mt-4" style="font-size: 0.8rem;">
+                                            Holiday
+                                        </div>
+                                        {% elif day.is_working_day %}
+                                        <div class="bg-success text-white rounded p-1 mt-4" style="font-size: 0.8rem;">
+                                            Work
+                                        </div>
+                                        {% endif %}
+                                        {% endif %}
+                                    </td>
+                                    {% endfor %}
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            {% else %}
+            <div class="alert alert-warning">No calendar data available.</div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div id="calendar-data" 
+    data-current-year="{{ current_year|default('') }}"
+    data-current-month="{{ current_month|default('') }}"
+    style="display: none;">
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Función simplificada para cargar el calendario
+    function loadCalendar(year, month) {
+        const url = "{{ url_for('dashboard.calendar_partial', year=0, month=0) }}".replace('/0/0', '/' + year + '/' + month);
+        
+        $("#calendar-container").load(url, function(response, status, xhr) {
+            if (status == "error") {
+                $(this).html("<div class='alert alert-danger mt-3'>Error al cargar calendario</div>");
+                $("#fallback-calendar").show();
+            }
+        });
+    }
+
+    // Inicialización simple
+    $(document).ready(function() {
+        const currentYear = parseInt($("#calendar-data").attr("data-current-year")) || new Date().getFullYear();
+        const currentMonth = parseInt($("#calendar-data").attr("data-current-month")) || new Date().getMonth() + 1;
+        
+        // Cargar calendario
+        loadCalendar(currentYear, currentMonth);
+        
+        // Botones de navegación
+        $(document).on('click', '.calendar-nav', function() {
+            loadCalendar($(this).data('year'), $(this).data('month'));
+            return false;
+        });
+    });
+</script>
 {% endblock %} 

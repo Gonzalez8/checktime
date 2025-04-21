@@ -47,7 +47,7 @@ def add():
         ).first()
         
         if overlapping and form.is_active.data:
-            flash('This period overlaps with another period. Please adjust the dates.')
+            flash('This period overlaps with another period. Please adjust the dates.', 'danger')
             return redirect(url_for('schedules.add'))
         
         period = SchedulePeriod(
@@ -80,7 +80,7 @@ def edit(period_id):
         ).first()
         
         if overlapping and form.is_active.data:
-            flash('This period overlaps with another period. Please adjust the dates.')
+            flash('This period overlaps with another period. Please adjust the dates.', 'danger')
             return redirect(url_for('schedules.edit', period_id=period_id))
         
         period.name = form.name.data
