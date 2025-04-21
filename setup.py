@@ -11,12 +11,14 @@ setup(
         "schedule>=1.1.0",
         "selenium>=4.1.0",
         "python-telegram-bot>=20.8",
+        "chromedriver-autoinstaller>=0.6.4",
     ],
     python_requires=">=3.8",
     entry_points={
         "console_scripts": [
-            "checktime-fichar=checktime.main:main",
+            "checktime-fichar=checktime.fichaje.service:main",
             "checktime-bot=checktime.bot.listener:main",
+            "checktime-web=checktime.web.server:main",
         ],
     },
 ) 

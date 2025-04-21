@@ -124,12 +124,13 @@ class HolidayManager:
                     # Context may have already been popped
                     pass
     
-    def add_holiday(self, date: str) -> bool:
+    def add_holiday(self, date: str, description: str = None) -> bool:
         """
         Añade un nuevo día festivo.
         
         Args:
             date (str): Fecha en formato YYYY-MM-DD
+            description (str, optional): Descripción del festivo. Si no se proporciona, se usa una predeterminada.
         
         Returns:
             bool: True si se añadió correctamente, False en caso contrario
@@ -154,7 +155,8 @@ class HolidayManager:
                 return False
             
             # Add to database
-            holiday = Holiday(date=date_obj, description=f"Added via API on {datetime.datetime.now()}")
+            holiday_description = description if description else f"Added via API on {datetime.datetime.now()}"
+            holiday = Holiday(date=date_obj, description=holiday_description)
             db.session.add(holiday)
             db.session.commit()
             
