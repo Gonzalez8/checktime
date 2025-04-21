@@ -1,9 +1,19 @@
 from flask import Blueprint, render_template, redirect, url_for, flash, request
 from flask_login import login_required, current_user
 from flask_wtf import FlaskForm
+from flask_wtf.file import FileField, FileRequired, FileAllowed
 from wtforms import StringField, DateField, SubmitField
 from wtforms.validators import DataRequired, ValidationError
 from datetime import datetime, timedelta
+import os
+import tempfile
+
+# Importación segura de icalendar
+try:
+    from icalendar import Calendar
+    HAS_ICALENDAR = True
+except ImportError:
+    HAS_ICALENDAR = False
 
 from checktime.web.models import db, Holiday
 from checktime.fichaje.holidays import HolidayManager
@@ -24,6 +34,13 @@ class HolidayRangeForm(FlaskForm):
     def validate_end_date(self, field):
         if field.data < self.start_date.data:
             raise ValidationError('End date must be after start date')
+
+class ICalendarImportForm(FlaskForm):
+    ics_file = FileField('ICS File', validators=[
+        FileRequired(),
+        FileAllowed(['ics'], 'Only ICS files are allowed!')
+    ])
+    submit = SubmitField('Import Holidays')
 
 @holidays_bp.route('/')
 @login_required
@@ -154,4 +171,86 @@ def add_range():
         else:
             flash('No holidays were added. All dates in the range were either weekends or already holidays.', 'warning')
     
-    return render_template('holidays/add_range.html', form=form, title='Add Holiday Range') 
+    return render_template('holidays/add_range.html', form=form, title='Add Holiday Range')
+
+@holidays_bp.route('/import-ics', methods=['GET', 'POST'])
+@login_required
+def import_ics():
+    """Import holidays from an ICS file."""
+    # Verificar si la biblioteca icalendar está disponible
+    if not HAS_ICALENDAR:
+        flash('The icalendar library is not installed. Please install it to use this feature.', 'danger')
+        return redirect(url_for('holidays.index'))
+    
+    form = ICalendarImportForm()
+    
+    if form.validate_on_submit():
+        try:
+            # Save the uploaded file to a temporary location
+            ics_file = form.ics_file.data
+            fd, temp_path = tempfile.mkstemp(suffix='.ics')
+            
+            try:
+                # Write the file content to the temporary file
+                with os.fdopen(fd, 'wb') as tmp:
+                    tmp.write(ics_file.read())
+                
+                # Parse the ICS file
+                with open(temp_path, 'rb') as f:
+                    cal = Calendar.from_ical(f.read())
+                
+                # Process events
+                events_added = 0
+                duplicates = 0
+                
+                for component in cal.walk():
+                    if component.name == "VEVENT":
+                        event_date = component.get('dtstart').dt
+                        
+                        # If event_date is a datetime (not just a date), convert to date
+                        if isinstance(event_date, datetime):
+                            event_date = event_date.date()
+                        
+                        # Get event summary/description
+                        summary = component.get('summary', 'Imported Holiday')
+                        
+                        # Check if holiday already exists
+                        existing = Holiday.query.filter_by(date=event_date).first()
+                        if existing:
+                            duplicates += 1
+                            continue
+                        
+                        # Add to database
+                        holiday = Holiday(date=event_date, description=str(summary))
+                        db.session.add(holiday)
+                        events_added += 1
+                
+                if events_added > 0:
+                    db.session.commit()
+                    
+                    # Sync with holiday manager
+                    holiday_manager = HolidayManager()
+                    
+                    # Get all holidays from the database
+                    holidays = Holiday.query.all()
+                    for holiday in holidays:
+                        date_str = holiday.date.strftime('%Y-%m-%d')
+                        holiday_manager.add_holiday(date_str, description=holiday.description)
+                    
+                    flash(f'Successfully imported {events_added} holidays. {duplicates} duplicates were skipped.', 'success')
+                    return redirect(url_for('holidays.index'))
+                else:
+                    flash(f'No holidays were imported. {duplicates} duplicates were found.', 'warning')
+                    
+            except Exception as e:
+                flash(f'Error importing ICS file: {str(e)}', 'danger')
+            finally:
+                # Clean up the temporary file
+                try:
+                    os.unlink(temp_path)
+                except:
+                    pass
+        except Exception as outer_e:
+            flash(f'Error processing the file: {str(outer_e)}', 'danger')
+    
+    return render_template('holidays/import_ics.html', form=form, title='Import Holidays from ICS') 

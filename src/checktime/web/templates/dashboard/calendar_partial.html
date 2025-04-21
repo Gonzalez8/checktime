@@ -1,77 +1,188 @@
 <div class="card shadow">
-    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center py-2">
-        <h5 class="mb-0"><i class="bi bi-calendar3"></i> {{ current_month }}</h5>
-        <div>
-            <button data-year="{{ prev_year }}" data-month="{{ prev_month }}" class="btn btn-sm btn-light me-1 calendar-nav">
-                <i class="bi bi-chevron-left"></i> Previous
+    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center py-2 flex-wrap">
+        <h5 class="mb-2 mb-md-0"><i class="bi bi-calendar3"></i> {{ current_month }}</h5>
+        <div class="d-flex gap-1">
+            <button data-year="{{ prev_year }}" data-month="{{ prev_month }}" class="btn btn-sm btn-outline-light calendar-nav">
+                <i class="bi bi-chevron-left"></i><span class="d-none d-md-inline"> Previous</span>
             </button>
             {% if not is_current_month %}
-            <button data-year="{{ current_year }}" data-month="{{ current_month_num }}" class="btn btn-sm btn-light me-1 calendar-nav">
-                Today
+            <button data-year="{{ current_year }}" data-month="{{ current_month_num }}" class="btn btn-sm btn-outline-light calendar-nav">
+                <span class="d-none d-md-inline">Today</span><span class="d-inline d-md-none"><i class="bi bi-calendar-event"></i></span>
             </button>
             {% endif %}
-            <button data-year="{{ next_year }}" data-month="{{ next_month }}" class="btn btn-sm btn-light calendar-nav">
-                Next <i class="bi bi-chevron-right"></i>
+            <button data-year="{{ next_year }}" data-month="{{ next_month }}" class="btn btn-sm btn-outline-light calendar-nav">
+                <span class="d-none d-md-inline">Next </span><i class="bi bi-chevron-right"></i>
             </button>
         </div>
     </div>
     <div class="card-body p-1">
-        <table class="table table-bordered text-center mb-1">
-            <thead class="table-light">
-                <tr>
-                    <th class="py-1">Mon</th>
-                    <th class="py-1">Tue</th>
-                    <th class="py-1">Wed</th>
-                    <th class="py-1">Thu</th>
-                    <th class="py-1">Fri</th>
-                    <th class="py-1 bg-light text-muted">Sat</th>
-                    <th class="py-1 bg-light text-muted">Sun</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for week in calendar_data %}
-                <tr>
-                    {% for day in week %}
-                    {% set is_weekend = loop.index > 5 %}
-                    <td style="height: 60px; position: relative; padding: 2px;" 
-                        class="{% if day.is_today %}bg-light border border-primary{% elif is_weekend %}bg-light text-muted{% endif %}">
-                        {% if day.day %}
-                        <div style="position: absolute; top: 2px; left: 2px; font-weight: bold; font-size: 0.9rem;">
-                            {{ day.day }}
-                        </div>
-                        
-                        {% if day.is_holiday %}
-                        <div class="bg-info text-white rounded p-1 mt-4" style="font-size: 0.75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ day.holiday_name }}">
-                            {{ day.holiday_name }}
-                        </div>
-                        {% elif day.is_working_day and not is_weekend %}
-                        <div style="margin-top: 20px; font-size: 0.75rem;">
-                            <div class="bg-success text-white rounded-top p-1">
-                                <i class="bi bi-arrow-down-circle"></i> In: {{ day.check_in_time|default('09:00') }}
+        <div class="table-responsive">
+            <table class="table table-bordered text-center mb-1">
+                <thead class="table-light">
+                    <tr>
+                        <th class="py-1 cal-day">M</th>
+                        <th class="py-1 cal-day">T</th>
+                        <th class="py-1 cal-day">W</th>
+                        <th class="py-1 cal-day">T</th>
+                        <th class="py-1 cal-day">F</th>
+                        <th class="py-1 cal-day bg-light text-muted">S</th>
+                        <th class="py-1 cal-day bg-light text-muted">S</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for week in calendar_data %}
+                    <tr>
+                        {% for day in week %}
+                        {% set is_weekend = loop.index > 5 %}
+                        <td class="cal-cell {% if day.is_today %}bg-light border border-primary{% elif is_weekend %}bg-light text-muted{% endif %}">
+                            {% if day.day %}
+                            <div class="cal-day-number">{{ day.day }}</div>
+                            
+                            {% if day.is_holiday %}
+                            <div class="cal-event holiday" title="{{ day.holiday_name }}">
+                                {{ day.holiday_name }}
                             </div>
-                            <div class="bg-danger text-white rounded-bottom p-1">
-                                <i class="bi bi-arrow-up-circle"></i> Out: {{ day.check_out_time|default('17:00') }}
+                            {% elif day.is_working_day and not is_weekend %}
+                            <div class="cal-event-group">
+                                <div class="cal-event check-in" title="{{ day.period_name }}">
+                                    <i class="bi bi-arrow-down-circle"></i> {{ day.check_in_time|default('09:00') }}
+                                </div>
+                                <div class="cal-event check-out">
+                                    <i class="bi bi-arrow-up-circle"></i> {{ day.check_out_time|default('17:00') }}
+                                </div>
+                                {% if day.period_name %}
+                                <div class="cal-event period" title="{{ day.period_name }}">
+                                    {{ day.period_name }}
+                                </div>
+                                {% endif %}
                             </div>
-                        </div>
-                        {% endif %}
-                        {% endif %}
-                    </td>
+                            {% endif %}
+                            {% endif %}
+                        </td>
+                        {% endfor %}
+                    </tr>
                     {% endfor %}
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-        <div class="d-flex mt-1 justify-content-end">
-            <span class="badge bg-success me-2">Working Day</span>
-            <span class="badge bg-info me-2">Holiday</span>
-            <span class="badge bg-light text-dark me-2">Weekend</span>
+                </tbody>
+            </table>
+        </div>
+        <div class="d-flex mt-1 justify-content-end flex-wrap">
+            <span class="badge bg-success me-2 mb-1">Working Day</span>
+            <span class="badge bg-info me-2 mb-1">Holiday</span>
+            <span class="badge bg-light text-dark me-2 mb-1">Weekend</span>
         </div>
     </div>
 </div>
 
+<style>
+    .cal-day {
+        width: 14.28%;
+        min-width: 32px;
+        font-size: 0.9rem;
+    }
+    
+    .cal-cell {
+        height: 60px;
+        position: relative;
+        padding: 2px !important;
+        overflow: hidden;
+    }
+    
+    .cal-day-number {
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        font-weight: bold;
+        font-size: 0.9rem;
+    }
+    
+    .cal-event-group {
+        margin-top: 20px;
+        font-size: 0.75rem;
+    }
+    
+    .cal-event {
+        padding: 1px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 0.75rem;
+        border-radius: 3px;
+    }
+    
+    .cal-event.holiday {
+        background-color: var(--bs-info);
+        color: white;
+        margin-top: 20px;
+    }
+    
+    .cal-event.check-in {
+        background-color: var(--bs-success);
+        color: white;
+        border-top-left-radius: 3px;
+        border-top-right-radius: 3px;
+        border-bottom-left-radius: 0;
+        border-bottom-right-radius: 0;
+    }
+    
+    .cal-event.check-out {
+        background-color: var(--bs-danger);
+        color: white;
+        border-top-left-radius: 0;
+        border-top-right-radius: 0;
+        border-bottom-left-radius: 3px;
+        border-bottom-right-radius: 3px;
+    }
+    
+    .cal-event.period {
+        background-color: var(--bs-secondary);
+        color: white;
+        margin-top: 1px;
+        font-size: 0.65rem;
+    }
+    
+    /* Estilos para pantallas pequeñas */
+    @media (max-width: 767.98px) {
+        .cal-cell {
+            height: 50px;
+            font-size: 0.7rem;
+        }
+        
+        .cal-day-number {
+            font-size: 0.8rem;
+        }
+        
+        .cal-event {
+            font-size: 0.65rem;
+        }
+        
+        .cal-event.period {
+            font-size: 0.6rem;
+        }
+        
+        .cal-event-group {
+            margin-top: 18px;
+        }
+    }
+    
+    /* Estilos para pantallas muy pequeñas */
+    @media (max-width: 575.98px) {
+        .cal-cell {
+            height: 45px;
+        }
+        
+        .cal-event-group {
+            margin-top: 15px;
+        }
+        
+        .table-responsive {
+            margin-bottom: 0;
+        }
+    }
+</style>
+
 <script>
     // Initialize Bootstrap tooltips
-    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[title]'));
     var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
         return new bootstrap.Tooltip(tooltipTriggerEl);
     });

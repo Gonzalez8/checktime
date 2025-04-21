@@ -9,6 +9,23 @@ An application for automating check-in and check-out on the CheckJC system.
 - Telegram integration for notifications and commands
 - Web interface to configure schedules and holidays
 
+## Screenshots
+
+### Dashboard
+![Dashboard Calendar View](docs/screenshots/dashboard-calendar.png)
+The main dashboard displays a monthly calendar with daily check-in and check-out times.
+
+![Dashboard Stats View](docs/screenshots/dashboard-stats.png)
+The dashboard also shows current schedule, upcoming holidays, active schedule periods, and statistics.
+
+### Holiday Management
+![Holiday Import](docs/screenshots/holiday-import.png)
+Easily import holidays from ICS calendar files.
+
+### Schedule Management
+![Schedule Editor](docs/screenshots/schedule-editor.png)
+Edit daily schedules with an intuitive interface.
+
 ## Service Architecture
 
 CheckTime is organized into four independent services, each with a single responsibility:

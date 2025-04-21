@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col">
+            <h2><i class="bi bi-calendar-event"></i> Import Holidays</h2>
+            <p class="text-muted">Import holidays from an ICS calendar file.</p>
+        </div>
+        <div class="col-auto">
+            <a href="{{ url_for('holidays.index') }}" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> Back to Holidays
+            </a>
+        </div>
+    </div>
+    
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card shadow">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="bi bi-file-earmark-arrow-up"></i> Import ICS File</h5>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle"></i> Upload an ICS calendar file to import holidays. 
+                        <strong>Events from the calendar will be added as holidays.</strong>
+                    </div>
+                    
+                    <form method="POST" action="{{ url_for('holidays.import_ics') }}" enctype="multipart/form-data">
+                        {{ form.hidden_tag() }}
+                        <div class="mb-3">
+                            <label for="ics_file" class="form-label">{{ form.ics_file.label }}</label>
+                            {{ form.ics_file(class="form-control") }}
+                            {% if form.ics_file.errors %}
+                                <div class="invalid-feedback d-block">
+                                    {% for error in form.ics_file.errors %}
+                                        {{ error }}
+                                    {% endfor %}
+                                </div>
+                            {% endif %}
+                            <div class="form-text">
+                                Supported file format: .ics (iCalendar)
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            {{ form.submit(class="btn btn-primary") }}
+                            <a href="{{ url_for('holidays.index') }}" class="btn btn-secondary">Cancel</a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row mt-4">
+        <div class="col-md-8 mx-auto">
+            <div class="card">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0"><i class="bi bi-question-circle"></i> How to get an ICS file</h5>
+                </div>
+                <div class="card-body">
+                    <p>You can get ICS calendar files from various sources:</p>
+                    <ul>
+                        <li>From Google Calendar, go to Settings > Import & Export > Export</li>
+                        <li>From Apple Calendar, select a calendar and use File > Export</li>
+                        <li>From Microsoft Outlook, right-click on a calendar and select "Save calendar"</li>
+                        <li>Download public holiday calendars from your country's official websites</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 
