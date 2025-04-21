@@ -2,6 +2,28 @@
 
 {% block title %}Edit Day Schedules - {{ super() }}{% endblock %}
 
+{% block styles %}
+<style>
+    .quick-actions {
+        margin-bottom: 15px;
+    }
+    .preset-btn {
+        margin-right: 5px;
+        margin-bottom: 5px;
+    }
+    .time-presets {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        margin-top: 5px;
+    }
+    .time-preset-btn {
+        font-size: 0.8rem;
+        padding: 0.2rem 0.5rem;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="row mb-4">
     <div class="col">
@@ -20,6 +42,24 @@
 
 <div class="row">
     <div class="col-md-12">
+        <div class="card shadow mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-lightning"></i> Quick Actions</h5>
+            </div>
+            <div class="card-body quick-actions">
+                <h6>Apply Schedule Templates:</h6>
+                <button type="button" class="btn btn-outline-primary preset-btn" onclick="applyPreset('standard')">
+                    <i class="bi bi-briefcase"></i> Standard (9:00-18:00 L-V)
+                </button>
+                <button type="button" class="btn btn-outline-primary preset-btn" onclick="applyPreset('summer')">
+                    <i class="bi bi-sun"></i> Summer (8:00-15:00 L-V)
+                </button>
+                <button type="button" class="btn btn-outline-primary preset-btn" onclick="applyPreset('flexible')">
+                    <i class="bi bi-clock-history"></i> Flexible (9:00-18:00 L-J, 8:00-15:00 V)
+                </button>
+            </div>
+        </div>
+
         <div class="card shadow">
             <div class="card-header bg-primary text-white">
                 <h5 class="mb-0"><i class="bi bi-clock"></i> Daily Check-in/Check-out Times</h5>
@@ -48,12 +88,32 @@
                                             <input type="time" class="form-control" id="day_{{ day_idx }}_check_in" 
                                                    name="day_{{ day_idx }}_check_in" 
                                                    value="{{ day_schedules[day_idx].check_in_time if day_idx in day_schedules else '' }}">
+                                            <div class="time-presets">
+                                                <button type="button" class="btn btn-sm btn-outline-secondary time-preset-btn" 
+                                                        onclick="setTime('day_{{ day_idx }}_check_in', '08:00')">08:00</button>
+                                                <button type="button" class="btn btn-sm btn-outline-secondary time-preset-btn" 
+                                                        onclick="setTime('day_{{ day_idx }}_check_in', '08:30')">08:30</button>
+                                                <button type="button" class="btn btn-sm btn-outline-secondary time-preset-btn" 
+                                                        onclick="setTime('day_{{ day_idx }}_check_in', '09:00')">09:00</button>
+                                                <button type="button" class="btn btn-sm btn-outline-secondary time-preset-btn" 
+                                                        onclick="setTime('day_{{ day_idx }}_check_in', '09:30')">09:30</button>
+                                            </div>
                                         </div>
                                         <div class="col-md-6 mb-3">
                                             <label for="day_{{ day_idx }}_check_out" class="form-label">Check-out Time</label>
                                             <input type="time" class="form-control" id="day_{{ day_idx }}_check_out" 
                                                    name="day_{{ day_idx }}_check_out" 
                                                    value="{{ day_schedules[day_idx].check_out_time if day_idx in day_schedules else '' }}">
+                                            <div class="time-presets">
+                                                <button type="button" class="btn btn-sm btn-outline-secondary time-preset-btn" 
+                                                        onclick="setTime('day_{{ day_idx }}_check_out', '15:00')">15:00</button>
+                                                <button type="button" class="btn btn-sm btn-outline-secondary time-preset-btn" 
+                                                        onclick="setTime('day_{{ day_idx }}_check_out', '17:00')">17:00</button>
+                                                <button type="button" class="btn btn-sm btn-outline-secondary time-preset-btn" 
+                                                        onclick="setTime('day_{{ day_idx }}_check_out', '18:00')">18:00</button>
+                                                <button type="button" class="btn btn-sm btn-outline-secondary time-preset-btn" 
+                                                        onclick="setTime('day_{{ day_idx }}_check_out', '19:00')">19:00</button>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -63,7 +123,7 @@
                     </div>
                     
                     <div class="d-grid gap-2 mt-4">
-                        <button type="submit" class="btn btn-primary">
+                        <button type="submit" class="btn btn-primary btn-lg">
                             <i class="bi bi-save"></i> Save Day Schedules
                         </button>
                     </div>
@@ -90,6 +150,75 @@
         if (!checkbox.checked) {
             checkInInput.value = '';
             checkOutInput.value = '';
+        }
+    }
+
+    function setTime(inputId, timeValue) {
+        document.getElementById(inputId).value = timeValue;
+    }
+
+    function applySchedule(dayIndex, checkIn, checkOut) {
+        // Enable the day
+        const toggle = document.getElementById(`day_${dayIndex}_toggle`);
+        toggle.checked = true;
+        
+        // Show inputs
+        const inputs = document.getElementById(`day_${dayIndex}_inputs`);
+        inputs.style.display = 'block';
+        
+        // Set enabled flag
+        const enabled = document.getElementById(`day_${dayIndex}_enabled`);
+        enabled.value = 'on';
+        
+        // Set times
+        document.getElementById(`day_${dayIndex}_check_in`).value = checkIn;
+        document.getElementById(`day_${dayIndex}_check_out`).value = checkOut;
+    }
+
+    function applyPreset(presetName) {
+        switch (presetName) {
+            case 'standard':
+                // Standard workweek (9:00-18:00 Mon-Fri)
+                for (let i = 0; i < 5; i++) {
+                    applySchedule(i, '09:00', '18:00');
+                }
+                // Disable weekend
+                document.getElementById('day_5_toggle').checked = false;
+                document.getElementById('day_5_enabled').value = '';
+                document.getElementById('day_5_inputs').style.display = 'none';
+                document.getElementById('day_6_toggle').checked = false;
+                document.getElementById('day_6_enabled').value = '';
+                document.getElementById('day_6_inputs').style.display = 'none';
+                break;
+                
+            case 'summer':
+                // Summer schedule (8:00-15:00 Mon-Fri)
+                for (let i = 0; i < 5; i++) {
+                    applySchedule(i, '08:00', '15:00');
+                }
+                // Disable weekend
+                document.getElementById('day_5_toggle').checked = false;
+                document.getElementById('day_5_enabled').value = '';
+                document.getElementById('day_5_inputs').style.display = 'none';
+                document.getElementById('day_6_toggle').checked = false;
+                document.getElementById('day_6_enabled').value = '';
+                document.getElementById('day_6_inputs').style.display = 'none';
+                break;
+                
+            case 'flexible':
+                // Flexible schedule (9:00-18:00 Mon-Thu, 8:00-15:00 Fri)
+                for (let i = 0; i < 4; i++) {
+                    applySchedule(i, '09:00', '18:00');
+                }
+                applySchedule(4, '08:00', '15:00');
+                // Disable weekend
+                document.getElementById('day_5_toggle').checked = false;
+                document.getElementById('day_5_enabled').value = '';
+                document.getElementById('day_5_inputs').style.display = 'none';
+                document.getElementById('day_6_toggle').checked = false;
+                document.getElementById('day_6_enabled').value = '';
+                document.getElementById('day_6_inputs').style.display = 'none';
+                break;
         }
     }
 </script>
