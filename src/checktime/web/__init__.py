@@ -1,7 +1,8 @@
 import os
-from flask import Flask
+from flask import Flask, request, session, redirect, url_for, g
 from flask_login import LoginManager
 from checktime.web.models import db, User
+from checktime.web.translations import t
 
 login_manager = LoginManager()
 
@@ -19,6 +20,9 @@ def create_app(test_config=None):
         SECRET_KEY=os.getenv('FLASK_SECRET_KEY', 'dev'),
         SQLALCHEMY_DATABASE_URI=os.getenv('DATABASE_URL', 'sqlite:////data/checktime.db'),
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
+        # Babel configuration
+        LANGUAGES = ['en', 'es'],
+        BABEL_DEFAULT_LOCALE = 'en',
     )
     
     # Override with test config if passed
@@ -58,4 +62,37 @@ def create_app(test_config=None):
     # Configure login view
     login_manager.login_view = 'auth.login'
     
+    # Language selector route
+    @app.route('/language/<lang_code>')
+    def set_language(lang_code):
+        # Store language preference in session
+        session['language'] = lang_code if lang_code in app.config['LANGUAGES'] else app.config['BABEL_DEFAULT_LOCALE']
+        # Redirect back to the previous page or home
+        return redirect(request.referrer or url_for('dashboard.index'))
+    
+    @app.before_request
+    def before_request():
+        # Set locale based on user preference
+        language = session.get('language')
+        if language:
+            # We'll use session for now instead of Flask-Babel
+            # This will be used in templates to display the right content
+            g.language = language
+        else:
+            g.language = app.config['BABEL_DEFAULT_LOCALE']
+    
+    # Add template context processor for translations
+    @app.context_processor
+    def inject_translations():
+        def translate(key):
+            # Use the language from the flask g object (set in before_request)
+            return t(key, g.language)
+        
+        # Make translate function and languages available in all templates
+        return dict(
+            _=translate,  # shortcut function for translation
+            languages=app.config['LANGUAGES'],
+            current_language=g.get('language', app.config['BABEL_DEFAULT_LOCALE'])
+        )
+            
     return app 

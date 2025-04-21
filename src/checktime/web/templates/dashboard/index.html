@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard - {{ super() }}{% endblock %}
+{% block title %}{{ _('dashboard') }} - {{ super() }}{% endblock %}
 
 {% block styles %}
 <style>
@@ -11,7 +11,7 @@
     }
     
     .loading:after {
-        content: "Loading...";
+        content: "{{ _('loading') }}";
         position: absolute;
         top: 50%;
         left: 50%;
@@ -30,7 +30,7 @@
     }
     
     #calendar-container:empty:before {
-        content: "El calendario se cargará aquí...";
+        content: "{{ _('calendar_will_load_here') }}";
         position: absolute;
         top: 50%;
         left: 50%;
@@ -43,12 +43,12 @@
         margin-bottom: 30px;
     }
     
-    /* Eliminar animaciones y transiciones */
+    /* Remove animations and transitions */
     .card, .alert, .btn {
         transition: none !important;
     }
     
-    /* Media queries para adaptabilidad */
+    /* Media queries for responsiveness */
     @media (max-width: 767.98px) {
         #calendar-container {
             padding: 0;
@@ -65,12 +65,12 @@
 {% block content %}
 <div class="row mb-3">
     <div class="col">
-        <h2><i class="bi bi-speedometer2"></i> Dashboard</h2>
-        <p class="text-muted">Welcome to the CheckTime dashboard. Manage your automatic check-in/check-out configuration.</p>
+        <h2><i class="bi bi-speedometer2"></i> {{ _('dashboard') }}</h2>
+        <p class="text-muted">{{ _('welcome_dashboard') }}</p>
     </div>
 </div>
 
-<!-- Calendar Row - Ahora aparece primero -->
+<!-- Calendar Row - Appears first -->
 <div class="row mb-4" id="calendar-section">
     <div class="col-12">
         <div class="card shadow">
@@ -86,28 +86,28 @@
     <div class="col-md-6 mb-4">
         <div class="card h-100 shadow">
             <div class="card-header bg-primary text-white">
-                <h5 class="mb-0"><i class="bi bi-calendar-check"></i> Current Schedule</h5>
+                <h5 class="mb-0"><i class="bi bi-calendar-check"></i> {{ _('current_schedule') }}</h5>
             </div>
             <div class="card-body">
                 {% if current_schedule %}
                 <h6 class="card-subtitle mb-2 text-muted">{{ current_schedule.name }}</h6>
                 <p class="card-text">
-                    <strong>Date Range:</strong> {{ current_schedule.start_date.strftime('%Y-%m-%d') }} to {{ current_schedule.end_date.strftime('%Y-%m-%d') }}
+                    <strong>{{ _('date_range') }}:</strong> {{ current_schedule.start_date.strftime('%Y-%m-%d') }} {{ _('to') }} {{ current_schedule.end_date.strftime('%Y-%m-%d') }}
                 </p>
                 
                 {% if day_schedules %}
                 <table class="table table-sm">
                     <thead>
                         <tr>
-                            <th>Day</th>
-                            <th>Check-in</th>
-                            <th>Check-out</th>
+                            <th>{{ _('day') }}</th>
+                            <th>{{ _('check_in_time') }}</th>
+                            <th>{{ _('check_out_time') }}</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for schedule in day_schedules %}
                         <tr>
-                            <td>{{ schedule.day_name }}</td>
+                            <td>{{ _(schedule.day_name.lower()) }}</td>
                             <td><span class="badge bg-success">{{ schedule.check_in_time }}</span></td>
                             <td><span class="badge bg-danger">{{ schedule.check_out_time }}</span></td>
                         </tr>
@@ -116,19 +116,19 @@
                 </table>
                 {% else %}
                 <div class="alert alert-warning">
-                    No daily schedules configured for this period.
+                    {{ _('no_day_schedules') }}
                 </div>
                 {% endif %}
                 
                 <a href="{{ url_for('schedules.edit_days', period_id=current_schedule.id) }}" class="btn btn-sm btn-primary">
-                    <i class="bi bi-pencil"></i> Edit Schedule
+                    <i class="bi bi-pencil"></i> {{ _('edit_schedule') }}
                 </a>
                 {% else %}
                 <div class="alert alert-info">
-                    No active schedule for today.
+                    {{ _('no_active_schedule') }}
                 </div>
                 <a href="{{ url_for('schedules.add') }}" class="btn btn-primary">
-                    <i class="bi bi-plus-circle"></i> Create Schedule
+                    <i class="bi bi-plus-circle"></i> {{ _('create_schedule') }}
                 </a>
                 {% endif %}
             </div>
@@ -139,7 +139,7 @@
     <div class="col-md-6 mb-4">
         <div class="card h-100 shadow">
             <div class="card-header bg-primary text-white">
-                <h5 class="mb-0"><i class="bi bi-calendar-event"></i> Upcoming Holidays</h5>
+                <h5 class="mb-0"><i class="bi bi-calendar-event"></i> {{ _('upcoming_holidays') }}</h5>
             </div>
             <div class="card-body">
                 {% if upcoming_holidays %}
@@ -151,22 +151,22 @@
                             <span class="text-muted ms-2">{{ holiday.description }}</span>
                         </div>
                         <span class="badge bg-primary rounded-pill">
-                            {{ (holiday.date - today).days }} days
+                            {{ (holiday.date - today).days }} {{ _('days') }}
                         </span>
                     </li>
                     {% endfor %}
                 </ul>
                 {% else %}
                 <div class="alert alert-info">
-                    No upcoming holidays.
+                    {{ _('no_upcoming_holidays') }}
                 </div>
                 {% endif %}
                 <div class="mt-3">
                     <a href="{{ url_for('holidays.add') }}" class="btn btn-sm btn-primary">
-                        <i class="bi bi-plus-circle"></i> Add Holiday
+                        <i class="bi bi-plus-circle"></i> {{ _('add_holiday') }}
                     </a>
                     <a href="{{ url_for('holidays.index') }}" class="btn btn-sm btn-outline-primary">
-                        <i class="bi bi-list"></i> View All
+                        <i class="bi bi-list"></i> {{ _('view_all') }}
                     </a>
                 </div>
             </div>
@@ -179,7 +179,7 @@
     <div class="col-md-6 mb-4">
         <div class="card h-100 shadow">
             <div class="card-header bg-primary text-white">
-                <h5 class="mb-0"><i class="bi bi-calendar-range"></i> Active Schedule Periods</h5>
+                <h5 class="mb-0"><i class="bi bi-calendar-range"></i> {{ _('active_periods') }}</h5>
             </div>
             <div class="card-body">
                 {% if active_periods %}
@@ -190,22 +190,22 @@
                             <h6 class="mb-1">{{ period.name }}</h6>
                             <small>
                                 {% if period == current_schedule %}
-                                <span class="badge bg-success">Current</span>
+                                <span class="badge bg-success">{{ _('current') }}</span>
                                 {% endif %}
                             </small>
                         </div>
-                        <p class="mb-1">{{ period.start_date.strftime('%Y-%m-%d') }} to {{ period.end_date.strftime('%Y-%m-%d') }}</p>
+                        <p class="mb-1">{{ period.start_date.strftime('%Y-%m-%d') }} {{ _('to') }} {{ period.end_date.strftime('%Y-%m-%d') }}</p>
                     </a>
                     {% endfor %}
                 </div>
                 {% else %}
                 <div class="alert alert-warning">
-                    No active schedule periods.
+                    {{ _('no_active_periods') }}
                 </div>
                 {% endif %}
                 <div class="mt-3">
                     <a href="{{ url_for('schedules.add') }}" class="btn btn-sm btn-primary">
-                        <i class="bi bi-plus-circle"></i> New Period
+                        <i class="bi bi-plus-circle"></i> {{ _('new_period') }}
                     </a>
                 </div>
             </div>
@@ -216,7 +216,7 @@
     <div class="col-md-6 mb-4">
         <div class="card h-100 shadow">
             <div class="card-header bg-primary text-white">
-                <h5 class="mb-0"><i class="bi bi-graph-up"></i> Statistics</h5>
+                <h5 class="mb-0"><i class="bi bi-graph-up"></i> {{ _('statistics') }}</h5>
             </div>
             <div class="card-body">
                 <div class="row text-center">
@@ -224,7 +224,7 @@
                         <div class="card bg-light">
                             <div class="card-body py-3">
                                 <h2 class="card-title">{{ days_this_week }}</h2>
-                                <p class="card-text text-muted">Working Days This Week</p>
+                                <p class="card-text text-muted">{{ _('working_days_week') }}</p>
                             </div>
                         </div>
                     </div>
@@ -232,7 +232,7 @@
                         <div class="card bg-light">
                             <div class="card-body py-3">
                                 <h2 class="card-title">{{ upcoming_holidays|length }}</h2>
-                                <p class="card-text text-muted">Upcoming Holidays</p>
+                                <p class="card-text text-muted">{{ _('upcoming_holidays') }}</p>
                             </div>
                         </div>
                     </div>
@@ -251,7 +251,7 @@
 
 {% block scripts %}
 <script>
-    // Función simplificada para cargar el calendario
+    // Simplified function to load the calendar
     function loadCalendar(year, month) {
         const url = "{{ url_for('dashboard.calendar_partial', year=0, month=0) }}".replace('/0/0', '/' + year + '/' + month);
         
@@ -259,20 +259,20 @@
         $("#calendar-container").load(url, function(response, status, xhr) {
             $("#calendar-container").removeClass("loading");
             if (status == "error") {
-                $(this).html("<div class='alert alert-danger mt-3'>Error al cargar calendario</div>");
+                $(this).html("<div class='alert alert-danger mt-3'>{{ _('error_loading_calendar') }}</div>");
             }
         });
     }
 
-    // Inicialización simple
+    // Simple initialization
     $(document).ready(function() {
         const currentYear = parseInt($("#calendar-data").attr("data-current-year")) || new Date().getFullYear();
         const currentMonth = parseInt($("#calendar-data").attr("data-current-month")) || new Date().getMonth() + 1;
         
-        // Cargar calendario
+        // Load calendar
         loadCalendar(currentYear, currentMonth);
         
-        // Botones de navegación
+        // Navigation buttons
         $(document).on('click', '.calendar-nav', function() {
             loadCalendar($(this).data('year'), $(this).data('month'));
             return false;

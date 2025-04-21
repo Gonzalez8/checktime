@@ -1,16 +1,16 @@
 {% extends "base.html" %}
 
-{% block title %}Add Schedule Period - {{ super() }}{% endblock %}
+{% block title %}{{ _('add_period') }} - {{ super() }}{% endblock %}
 
 {% block content %}
 <div class="row mb-4">
     <div class="col">
-        <h2><i class="bi bi-calendar-plus"></i> Add Schedule Period</h2>
-        <p class="text-muted">Add a new schedule period to the system.</p>
+        <h2><i class="bi bi-calendar-plus"></i> {{ _('add_period') }}</h2>
+        <p class="text-muted">{{ _('add_period_desc') }}</p>
     </div>
     <div class="col-auto">
         <a href="{{ url_for('schedules.index') }}" class="btn btn-outline-secondary">
-            <i class="bi bi-arrow-left"></i> Back to Schedules
+            <i class="bi bi-arrow-left"></i> {{ _('back_to_schedules') }}
         </a>
     </div>
 </div>
@@ -19,28 +19,28 @@
     <div class="col-md-8">
         <div class="card shadow">
             <div class="card-header bg-primary text-white">
-                <h5 class="mb-0"><i class="bi bi-plus-circle"></i> New Schedule Period</h5>
+                <h5 class="mb-0"><i class="bi bi-plus-circle"></i> {{ _('new_period') }}</h5>
             </div>
             <div class="card-body">
                 <form method="post" action="{{ url_for('schedules.add') }}">
                     {{ form.hidden_tag() }}
                     <div class="mb-3">
-                        <label for="name" class="form-label">Period Name</label>
-                        {{ form.name(class="form-control", placeholder="e.g. Summer Schedule 2023, Winter Schedule 2023") }}
+                        <label for="name" class="form-label">{{ _('period_name') }}</label>
+                        {{ form.name(class="form-control", placeholder=_('period_name_placeholder')) }}
                         {% for error in form.name.errors %}
                         <div class="text-danger">{{ error }}</div>
                         {% endfor %}
                     </div>
                     <div class="row mb-3">
                         <div class="col-md-6">
-                            <label for="start_date" class="form-label">Start Date</label>
+                            <label for="start_date" class="form-label">{{ _('start_date') }}</label>
                             {{ form.start_date(class="form-control", type="date") }}
                             {% for error in form.start_date.errors %}
                             <div class="text-danger">{{ error }}</div>
                             {% endfor %}
                         </div>
                         <div class="col-md-6">
-                            <label for="end_date" class="form-label">End Date</label>
+                            <label for="end_date" class="form-label">{{ _('end_date') }}</label>
                             {{ form.end_date(class="form-control", type="date") }}
                             {% for error in form.end_date.errors %}
                             <div class="text-danger">{{ error }}</div>
@@ -50,17 +50,17 @@
                     <div class="mb-3 form-check">
                         {{ form.is_active(class="form-check-input") }}
                         <label class="form-check-label" for="is_active">
-                            Active Period
+                            {{ _('active_period') }}
                         </label>
                         <small class="form-text text-muted d-block">
-                            If activated, this period will be used for check-in/check-out times.
+                            {{ _('active_period_desc') }}
                         </small>
                     </div>
                     <div class="alert alert-info">
-                        <i class="bi bi-info-circle"></i> After creating the period, you'll be redirected to configure daily schedules.
+                        <i class="bi bi-info-circle"></i> {{ _('after_period_create_redirect') }}
                     </div>
                     <div class="d-grid gap-2">
-                        {{ form.submit(class="btn btn-primary") }}
+                        <button type="submit" class="btn btn-primary">{{ _('btn_save_period') }}</button>
                     </div>
                 </form>
             </div>

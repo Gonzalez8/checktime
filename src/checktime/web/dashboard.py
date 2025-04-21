@@ -1,9 +1,10 @@
-from flask import Blueprint, render_template, request, jsonify
+from flask import Blueprint, render_template, request, jsonify, g
 from flask_login import login_required, current_user
 
 from checktime.web.models import Holiday, SchedulePeriod, DaySchedule
 from datetime import datetime, timedelta, date
 import calendar
+from checktime.web.translations import get_translation
 
 dashboard_bp = Blueprint('dashboard', __name__)
 
@@ -111,6 +112,12 @@ def index(year=None, month=None):
     # Generate calendar data for the selected month
     calendar_data = generate_calendar_data(year, month, calendar_active_periods)
     
+    # Get the month name in the appropriate language
+    month_name = current_date.strftime('%B')
+    lang = getattr(g, 'language', 'en')
+    month_key = f'month_{month_name.lower()}'
+    month_translation = get_translation(month_key, lang)
+    
     return render_template(
         'dashboard/index.html',
         title='Dashboard',
@@ -121,7 +128,7 @@ def index(year=None, month=None):
         days_this_week=days_this_week,
         today=today,
         calendar_data=calendar_data,
-        current_month=current_date.strftime('%B %Y'),
+        current_month=f"{month_translation} {year}",
         is_current_month=(year == today.year and month == today.month),
         current_year=year,
         current_month_num=month,
@@ -177,10 +184,16 @@ def calendar_partial(year, month):
     # Generate calendar data for all active periods that overlap with this month
     calendar_data = generate_calendar_data(year, month, active_periods)
     
+    # Get the month name in the appropriate language
+    month_name = current_date.strftime('%B')
+    lang = getattr(g, 'language', 'en')
+    month_key = f'month_{month_name.lower()}'
+    month_translation = get_translation(month_key, lang)
+    
     return render_template(
         'dashboard/calendar_partial.html',
         calendar_data=calendar_data,
-        current_month=current_date.strftime('%B %Y'),
+        current_month=f"{month_translation} {year}",
         current_month_num=today.month,
         current_year=today.year,
         is_current_month=(year == today.year and month == today.month),
