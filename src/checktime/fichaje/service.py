@@ -93,7 +93,6 @@ def perform_check(check_type):
         return
 
     logger.info(f"Iniciando proceso de fichaje de {check_type}...")
-    telegram_client.send_message(f"🔄 Iniciando proceso de fichaje de {check_type}...")
     
     try:
         with CheckJCClient(SELENIUM_OPTIONS, SELENIUM_TIMEOUT) as client:
