@@ -11,11 +11,12 @@ Una aplicación para automatizar el fichaje de entrada y salida en el sistema Ch
 
 ## Arquitectura de Servicios
 
-CheckTime está organizado en tres servicios independientes, cada uno con una única responsabilidad:
+CheckTime está organizado en cuatro servicios independientes, cada uno con una única responsabilidad:
 
 1. **Servicio Web**: Proporciona la interfaz de usuario web para administrar el sistema
 2. **Servicio de Fichaje**: Realiza los fichajes automáticos según los horarios configurados
 3. **Servicio de Bot**: Maneja la integración con Telegram para notificaciones y comandos
+4. **Servicio de Base de Datos**: Gestiona el almacenamiento persistente de datos (SQLite) para horarios, festivos y configuración
 
 Esta separación garantiza mayor estabilidad, mantenibilidad y escalabilidad del sistema.
 
@@ -73,7 +74,10 @@ La interfaz web permite:
    docker compose up -d web    # Solo la interfaz web
    docker compose up -d fichar # Solo el servicio de fichaje
    docker compose up -d bot    # Solo el bot de Telegram
+   docker compose up -d db     # Solo la base de datos
    ```
+
+   Nota: El servicio de base de datos se inicia automáticamente como dependencia cuando se inician los demás servicios.
 
 ### Sin Docker (Desarrollo)
 
