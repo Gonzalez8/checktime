@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Edit Day Schedules - {{ super() }}{% endblock %}
+{% block title %}{{ _('edit_day_schedules') }} - {{ super() }}{% endblock %}
 
 {% block styles %}
 <style>
@@ -27,15 +27,15 @@
 {% block content %}
 <div class="row mb-4">
     <div class="col">
-        <h2><i class="bi bi-calendar-week"></i> Edit Day Schedules</h2>
+        <h2><i class="bi bi-calendar-week"></i> {{ _('edit_day_schedules') }}</h2>
         <p class="text-muted">
-            Configure daily schedules for period: <strong>{{ period.name }}</strong>
+            {{ _('configure_daily_schedules') }}: <strong>{{ period.name }}</strong>
             ({{ period.start_date.strftime('%Y-%m-%d') }} to {{ period.end_date.strftime('%Y-%m-%d') }})
         </p>
     </div>
     <div class="col-auto">
         <a href="{{ url_for('schedules.index') }}" class="btn btn-outline-secondary">
-            <i class="bi bi-arrow-left"></i> Back to Schedules
+            <i class="bi bi-arrow-left"></i> {{ _('back') }}
         </a>
     </div>
 </div>
@@ -44,25 +44,25 @@
     <div class="col-md-12">
         <div class="card shadow mb-4">
             <div class="card-header bg-primary text-white">
-                <h5 class="mb-0"><i class="bi bi-lightning"></i> Quick Actions</h5>
+                <h5 class="mb-0"><i class="bi bi-lightning"></i> {{ _('quick_actions') }}</h5>
             </div>
             <div class="card-body quick-actions">
-                <h6>Apply Schedule Templates:</h6>
+                <h6>{{ _('schedule_templates') }}:</h6>
                 <button type="button" class="btn btn-outline-primary preset-btn" onclick="applyPreset('standard')">
-                    <i class="bi bi-briefcase"></i> Standard (9:00-18:00 L-V)
+                    <i class="bi bi-briefcase"></i> {{ _('standard_schedule') }}
                 </button>
                 <button type="button" class="btn btn-outline-primary preset-btn" onclick="applyPreset('summer')">
-                    <i class="bi bi-sun"></i> Summer (8:00-15:00 L-V)
+                    <i class="bi bi-sun"></i> {{ _('summer_schedule') }}
                 </button>
                 <button type="button" class="btn btn-outline-primary preset-btn" onclick="applyPreset('flexible')">
-                    <i class="bi bi-clock-history"></i> Flexible (9:00-18:00 L-J, 8:00-15:00 V)
+                    <i class="bi bi-clock-history"></i> {{ _('flexible_schedule') }}
                 </button>
             </div>
         </div>
 
         <div class="card shadow">
             <div class="card-header bg-primary text-white">
-                <h5 class="mb-0"><i class="bi bi-clock"></i> Daily Check-in/Check-out Times</h5>
+                <h5 class="mb-0"><i class="bi bi-clock"></i> {{ _('daily_check_times') }}</h5>
             </div>
             <div class="card-body">
                 <form method="post" action="{{ url_for('schedules.edit_days', period_id=period.id) }}">
@@ -71,7 +71,16 @@
                         <div class="col-md-6 mb-4">
                             <div class="card">
                                 <div class="card-header d-flex justify-content-between align-items-center">
-                                    <h6 class="mb-0">{{ days[day_idx] }}</h6>
+                                    <h6 class="mb-0">
+                                        {% if day_idx == 0 %}{{ _('monday') }}
+                                        {% elif day_idx == 1 %}{{ _('tuesday') }}
+                                        {% elif day_idx == 2 %}{{ _('wednesday') }}
+                                        {% elif day_idx == 3 %}{{ _('thursday') }}
+                                        {% elif day_idx == 4 %}{{ _('friday') }}
+                                        {% elif day_idx == 5 %}{{ _('saturday') }}
+                                        {% elif day_idx == 6 %}{{ _('sunday') }}
+                                        {% endif %}
+                                    </h6>
                                     <div class="form-check form-switch">
                                         <input class="form-check-input" type="checkbox" id="day_{{ day_idx }}_toggle" 
                                                onchange="toggleDayInputs({{ day_idx }})"
@@ -84,7 +93,7 @@
                                      {% if day_idx not in day_schedules %}style="display: none;"{% endif %}>
                                     <div class="row">
                                         <div class="col-md-6 mb-3">
-                                            <label for="day_{{ day_idx }}_check_in" class="form-label">Check-in Time</label>
+                                            <label for="day_{{ day_idx }}_check_in" class="form-label">{{ _('check_in_time') }}</label>
                                             <input type="time" class="form-control" id="day_{{ day_idx }}_check_in" 
                                                    name="day_{{ day_idx }}_check_in" 
                                                    value="{{ day_schedules[day_idx].check_in_time if day_idx in day_schedules else '' }}">
@@ -100,7 +109,7 @@
                                             </div>
                                         </div>
                                         <div class="col-md-6 mb-3">
-                                            <label for="day_{{ day_idx }}_check_out" class="form-label">Check-out Time</label>
+                                            <label for="day_{{ day_idx }}_check_out" class="form-label">{{ _('check_out_time') }}</label>
                                             <input type="time" class="form-control" id="day_{{ day_idx }}_check_out" 
                                                    name="day_{{ day_idx }}_check_out" 
                                                    value="{{ day_schedules[day_idx].check_out_time if day_idx in day_schedules else '' }}">
@@ -124,7 +133,7 @@
                     
                     <div class="d-grid gap-2 mt-4">
                         <button type="submit" class="btn btn-primary btn-lg">
-                            <i class="bi bi-save"></i> Save Day Schedules
+                            <i class="bi bi-save"></i> {{ _('save') }} {{ _('day_schedules') }}
                         </button>
                     </div>
                 </form>
