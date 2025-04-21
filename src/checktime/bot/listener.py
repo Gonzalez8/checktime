@@ -93,14 +93,59 @@ class TelegramBotListener:
             self.telegram.send_message(f"❌ {error_msg}")
     
     def list_holidays(self) -> None:
-        """Lista los días festivos registrados."""
+        """Lista los próximos días festivos del año."""
         try:
-            holidays = self.holiday_manager.get_holidays()
-            if not holidays:
-                self.telegram.send_message("📅 No hay festivos guardados.")
+            from datetime import datetime
+            import sqlite3
+            import os
+            
+            current_date = datetime.now().date()
+            current_year = current_date.year
+            
+            # Use the configured database from environment
+            import os
+            db_path = os.getenv('DATABASE_URL', 'sqlite:////data/checktime.db')
+            if db_path.startswith('sqlite:///'):
+                db_path = db_path[10:]  # Remove the sqlite:/// prefix
+            
+            if not os.path.exists(db_path):
+                self.telegram.send_message("❌ No se pudo encontrar la base de datos")
                 return
             
-            message = self.telegram.format_holiday_list(holidays)
+            # Acceder directamente a SQLite
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            
+            # Obtener todos los festivos
+            cursor.execute("SELECT date, description FROM holiday")
+            all_holidays = cursor.fetchall()
+            
+            if not all_holidays:
+                self.telegram.send_message("📅 No hay festivos guardados.")
+                conn.close()
+                return
+            
+            # Filtrar para mostrar solo los próximos festivos del año actual
+            upcoming_holidays = []
+            for date_str, desc in all_holidays:
+                holiday_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+                if holiday_date >= current_date and holiday_date.year == current_year:
+                    upcoming_holidays.append((date_str, desc))
+            
+            if not upcoming_holidays:
+                self.telegram.send_message("📅 No hay festivos próximos para este año.")
+                conn.close()
+                return
+            
+            # Crear el mensaje
+            message = f"📅 *Próximos festivos del año {current_year}:*\n"
+            for date_str, desc in sorted(upcoming_holidays, key=lambda x: datetime.strptime(x[0], "%Y-%m-%d")):
+                holiday_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+                days_remaining = (holiday_date - current_date).days
+                day_text = "hoy" if days_remaining == 0 else f"en {days_remaining} día{'s' if days_remaining != 1 else ''}"
+                message += f"- {date_str} ({desc}): {day_text}\n"
+            
+            conn.close()
             self.telegram.send_message(message)
         except Exception as e:
             error_msg = f"Error al listar festivos: {e}"
