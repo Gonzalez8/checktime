@@ -26,6 +26,7 @@ def index(year=None, month=None):
     
     # Create the selected date
     current_date = date(year, month, 1)
+    last_day_of_month = date(year, month, calendar.monthrange(year, month)[1])
     
     # Calculate previous and next month
     if month == 1:
@@ -100,8 +101,15 @@ def index(year=None, month=None):
             if check_date >= today:
                 days_this_week += 1
     
+    # Get all active periods that overlap with the selected month for the calendar
+    calendar_active_periods = SchedulePeriod.query.filter(
+        SchedulePeriod.is_active == True,
+        SchedulePeriod.start_date <= last_day_of_month,
+        SchedulePeriod.end_date >= current_date
+    ).order_by(SchedulePeriod.start_date).all()
+    
     # Generate calendar data for the selected month
-    calendar_data = generate_calendar_data(year, month, current_schedule)
+    calendar_data = generate_calendar_data(year, month, calendar_active_periods)
     
     return render_template(
         'dashboard/index.html',
@@ -115,8 +123,8 @@ def index(year=None, month=None):
         calendar_data=calendar_data,
         current_month=current_date.strftime('%B %Y'),
         is_current_month=(year == today.year and month == today.month),
-        year=year,
-        month=month,
+        current_year=year,
+        current_month_num=month,
         prev_year=prev_year,
         prev_month=prev_month,
         next_year=next_year,
@@ -135,6 +143,7 @@ def calendar_partial(year, month):
     
     # Create the selected date
     current_date = date(year, month, 1)
+    last_day_of_month = date(year, month, calendar.monthrange(year, month)[1])
     
     # Calculate previous and next month
     if month == 1:
@@ -151,20 +160,22 @@ def calendar_partial(year, month):
         next_month = month + 1
         next_year = year
     
-    # Get current schedule
+    # Get all active schedule periods that overlap with the selected month
     active_periods = SchedulePeriod.query.filter(
         SchedulePeriod.is_active == True,
-        SchedulePeriod.end_date >= today
+        SchedulePeriod.start_date <= last_day_of_month,
+        SchedulePeriod.end_date >= current_date
     ).order_by(SchedulePeriod.start_date).all()
     
+    # Find the current schedule (for today)
     current_schedule = None
     for period in active_periods:
         if period.start_date <= today <= period.end_date:
             current_schedule = period
             break
     
-    # Generate calendar data for the selected month
-    calendar_data = generate_calendar_data(year, month, current_schedule)
+    # Generate calendar data for all active periods that overlap with this month
+    calendar_data = generate_calendar_data(year, month, active_periods)
     
     return render_template(
         'dashboard/calendar_partial.html',
@@ -181,8 +192,8 @@ def calendar_partial(year, month):
         next_month=next_month
     )
 
-def generate_calendar_data(year, month, current_schedule):
-    """Generate calendar data for the specified month."""
+def generate_calendar_data(year, month, active_periods):
+    """Generate calendar data for the specified month for all active periods."""
     # Get the first day of the month and the number of days
     first_day = date(year, month, 1)
     _, num_days = calendar.monthrange(year, month)
@@ -199,20 +210,24 @@ def generate_calendar_data(year, month, current_schedule):
     # Create a dictionary of holidays for quick lookup
     holiday_dict = {h.date: h for h in holidays}
     
-    # Get working day configuration if we have a schedule
-    working_days = set()
-    if current_schedule:
-        # Check if this month overlaps with the schedule
-        if not (end_date < current_schedule.start_date or start_date > current_schedule.end_date):
-            # Get the days of the week that are configured as working days
-            scheduled_days = [day.day_of_week for day in current_schedule.schedules]
+    # Get working days from all active periods
+    working_days = {}  # Dictionary to store working days with their schedules
+    
+    # Process each active period
+    for period in active_periods:
+        # Check if this month overlaps with the schedule period
+        if not (end_date < period.start_date or start_date > period.end_date):
+            # Build a dictionary of daily schedules for this period
+            schedule_dict = {}
+            for day_schedule in period.schedules:
+                schedule_dict[day_schedule.day_of_week] = day_schedule
             
             # For each day in the month
             for day in range(1, num_days + 1):
                 check_date = date(year, month, day)
                 
                 # Skip if outside schedule range
-                if check_date < current_schedule.start_date or check_date > current_schedule.end_date:
+                if check_date < period.start_date or check_date > period.end_date:
                     continue
                 
                 # Skip weekends
@@ -220,22 +235,20 @@ def generate_calendar_data(year, month, current_schedule):
                     continue
                 
                 # Skip if not in schedule
-                if check_date.weekday() not in scheduled_days:
+                if check_date.weekday() not in schedule_dict:
                     continue
                 
                 # Skip if it's a holiday
                 if check_date in holiday_dict:
                     continue
                 
-                # If we get here, it's a working day
-                working_days.add(check_date)
-    
-    # Build a dictionary of daily schedules for quicker lookup
-    schedule_dict = {}
-    if current_schedule:
-        day_schedules = current_schedule.schedules
-        for day_schedule in day_schedules:
-            schedule_dict[day_schedule.day_of_week] = day_schedule
+                # If we get here, it's a working day - add to our dictionary
+                day_schedule = schedule_dict[check_date.weekday()]
+                working_days[check_date] = {
+                    'check_in_time': day_schedule.check_in_time,
+                    'check_out_time': day_schedule.check_out_time,
+                    'period_name': period.name
+                }
     
     # Generate the calendar data
     calendar_days = []
@@ -253,7 +266,8 @@ def generate_calendar_data(year, month, current_schedule):
                     'is_working_day': False,
                     'holiday_name': None,
                     'check_in_time': None,
-                    'check_out_time': None
+                    'check_out_time': None,
+                    'period_name': None
                 })
             else:
                 check_date = date(year, month, day)
@@ -264,10 +278,11 @@ def generate_calendar_data(year, month, current_schedule):
                 # Get schedule times if this is a working day
                 check_in_time = None
                 check_out_time = None
-                if is_working_day and check_date.weekday() in schedule_dict:
-                    day_schedule = schedule_dict[check_date.weekday()]
-                    check_in_time = day_schedule.check_in_time
-                    check_out_time = day_schedule.check_out_time
+                period_name = None
+                if is_working_day:
+                    check_in_time = working_days[check_date]['check_in_time']
+                    check_out_time = working_days[check_date]['check_out_time']
+                    period_name = working_days[check_date]['period_name']
                 
                 week_data.append({
                     'day': day,
@@ -276,7 +291,8 @@ def generate_calendar_data(year, month, current_schedule):
                     'is_working_day': is_working_day,
                     'holiday_name': holiday_dict[check_date].description if is_holiday else None,
                     'check_in_time': check_in_time,
-                    'check_out_time': check_out_time
+                    'check_out_time': check_out_time,
+                    'period_name': period_name
                 })
         calendar_days.append(week_data)
     
