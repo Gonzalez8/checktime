@@ -6,7 +6,7 @@ from wtforms.validators import DataRequired
 from datetime import datetime
 
 from checktime.web.models import db, Holiday
-from checktime.core.holidays import HolidayManager
+from checktime.fichaje.holidays import HolidayManager
 
 holidays_bp = Blueprint('holidays', __name__, url_prefix='/holidays')
 
@@ -74,5 +74,19 @@ def delete(id):
 @login_required
 def sync():
     """Update holidays in memory with current database state."""
+    # Create a holiday manager instance
+    holiday_manager = HolidayManager()
+    
+    # Get all holidays from the database
+    holidays = Holiday.query.order_by(Holiday.date).all()
+    
+    # Clear existing holidays and add each one from the database
+    holiday_manager.clear_holidays()
+    
+    # Add each holiday from the database to the holiday manager
+    for holiday in holidays:
+        date_str = holiday.date.strftime('%Y-%m-%d')
+        holiday_manager.add_holiday(date_str, description=holiday.description)
+    
     flash('Database holiday state synchronized successfully')
     return redirect(url_for('holidays.index')) 

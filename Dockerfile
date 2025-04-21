@@ -32,17 +32,11 @@ RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | gpg --d
     && apt-get install -y --no-install-recommends google-chrome-stable \
     && rm -rf /var/lib/apt/lists/*
 
-# Descargar e instalar ChromeDriver (fijo en versión 122 como ejemplo)
-ENV CHROME_VERSION=122
-
-RUN wget -q "https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/${CHROME_VERSION}.0.6261.94/linux64/chromedriver-linux64.zip" \
-    && unzip chromedriver-linux64.zip -d /tmp \
-    && mv /tmp/chromedriver-linux64/chromedriver /usr/local/bin/ \
-    && chmod +x /usr/local/bin/chromedriver \
-    && rm -rf /tmp/chromedriver-linux64 chromedriver-linux64.zip
+# Ya no necesitamos especificar una versión fija de ChromeDriver
+# webdriver-manager se encargará de descargar la versión compatible
 
 # Crear y establecer el directorio de trabajo
-WORKDIR /root/apps/CheckTime
+WORKDIR /app
 
 # Instalar dependencias de Python
 COPY requirements.txt .
@@ -55,12 +49,11 @@ COPY . .
 RUN pip install -e .
 
 # Asegurarse de que el módulo está en el PYTHONPATH
-ENV PYTHONPATH=/root/apps/CheckTime
+ENV PYTHONPATH=/app
 
 # Crear directorios necesarios
-RUN mkdir -p /root/apps/CheckTime/logs
-RUN mkdir -p /root/apps/CheckTime/config
-RUN mkdir -p /root/apps/CheckTime/instance && chmod 777 /root/apps/CheckTime/instance
+RUN mkdir -p /app/logs
+RUN mkdir -p /app/config
 RUN mkdir -p /app/db && chmod 777 /app/db
 
 # Exponer el puerto para la aplicación web

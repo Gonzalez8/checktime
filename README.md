@@ -7,11 +7,21 @@ Una aplicación para automatizar el fichaje de entrada y salida en el sistema Ch
 - Automatización del fichaje de entrada y salida en días laborables
 - Detección automática de fines de semana y días festivos
 - Integración con Telegram para recibir notificaciones
-- **Nuevo**: Interfaz web para configurar horarios y días festivos
+- Interfaz web para configurar horarios y días festivos
+
+## Arquitectura de Servicios
+
+CheckTime está organizado en tres servicios independientes, cada uno con una única responsabilidad:
+
+1. **Servicio Web**: Proporciona la interfaz de usuario web para administrar el sistema
+2. **Servicio de Fichaje**: Realiza los fichajes automáticos según los horarios configurados
+3. **Servicio de Bot**: Maneja la integración con Telegram para notificaciones y comandos
+
+Esta separación garantiza mayor estabilidad, mantenibilidad y escalabilidad del sistema.
 
 ## Interfaz Web
 
-La nueva interfaz web permite:
+La interfaz web permite:
 
 - Gestionar días festivos
 - Configurar diferentes periodos de horarios (ej. horario de verano, horario de invierno)
@@ -23,7 +33,7 @@ La nueva interfaz web permite:
 - Python 3.8+
 - Google Chrome
 - ChromeDriver (compatible con la versión de Chrome instalada)
-- Docker (opcional, recomendado para despliegue)
+- Docker y Docker Compose (recomendado para despliegue)
 
 ## Configuración
 
@@ -47,18 +57,25 @@ La nueva interfaz web permite:
    ADMIN_PASSWORD=contraseña_administrador
    ```
 
-## Instalación
+## Instalación y Ejecución
 
-### Con Docker (recomendado)
+### Con Docker Compose (recomendado)
 
-1. Construye y ejecuta los contenedores:
+1. Construye y ejecuta todos los servicios:
    ```
-   docker-compose up -d
+   docker compose up -d
    ```
 
 2. Accede a la interfaz web en: http://localhost:5000
 
-### Sin Docker
+3. Para iniciar servicios específicos:
+   ```
+   docker compose up -d web    # Solo la interfaz web
+   docker compose up -d fichar # Solo el servicio de fichaje
+   docker compose up -d bot    # Solo el bot de Telegram
+   ```
+
+### Sin Docker (Desarrollo)
 
 1. Crea un entorno virtual e instala las dependencias:
    ```
@@ -68,20 +85,17 @@ La nueva interfaz web permite:
    pip install -e .
    ```
 
-2. Ejecuta la aplicación:
+2. Ejecuta cada servicio por separado:
    ```
-   python -m src.checktime.main
+   # Interfaz web
+   python -m src.checktime.web.server
+   
+   # Servicio de fichaje
+   python -m src.checktime.fichaje.service
+   
+   # Bot de Telegram
+   python -m src.checktime.bot.listener
    ```
-
-3. Accede a la interfaz web en: http://localhost:5000
-
-## Modos de ejecución
-
-Puedes configurar el modo de ejecución utilizando la variable `RUN_MODE` en el archivo `.env`:
-
-- `RUN_MODE=web_only`: Ejecuta solo la interfaz web
-- `RUN_MODE=checker_only`: Ejecuta solo el servicio de fichaje automático
-- Sin valor: Ejecuta ambos servicios (interfaz web y fichaje automático)
 
 ## Uso de la interfaz web
 
