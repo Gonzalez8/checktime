@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h2><i class="bi bi-speedometer2"></i> Dashboard</h2>
+        <p class="text-muted">Welcome to the CheckTime dashboard. Manage your automatic check-in/check-out configuration.</p>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <!-- Current Schedule Card -->
+    <div class="col-md-6 mb-4">
+        <div class="card h-100 shadow">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-calendar-check"></i> Current Schedule</h5>
+            </div>
+            <div class="card-body">
+                {% if current_schedule %}
+                <h6 class="card-subtitle mb-2 text-muted">{{ current_schedule.name }}</h6>
+                <p class="card-text">
+                    <strong>Date Range:</strong> {{ current_schedule.start_date.strftime('%Y-%m-%d') }} to {{ current_schedule.end_date.strftime('%Y-%m-%d') }}
+                </p>
+                
+                {% if day_schedules %}
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>Day</th>
+                            <th>Check-in</th>
+                            <th>Check-out</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for schedule in day_schedules %}
+                        <tr>
+                            <td>{{ schedule.day_name }}</td>
+                            <td><span class="badge bg-success">{{ schedule.check_in_time }}</span></td>
+                            <td><span class="badge bg-danger">{{ schedule.check_out_time }}</span></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="alert alert-warning">
+                    No daily schedules configured for this period.
+                </div>
+                {% endif %}
+                
+                <a href="{{ url_for('schedules.edit_days', period_id=current_schedule.id) }}" class="btn btn-sm btn-primary">
+                    <i class="bi bi-pencil"></i> Edit Schedule
+                </a>
+                {% else %}
+                <div class="alert alert-info">
+                    No active schedule for today.
+                </div>
+                <a href="{{ url_for('schedules.add') }}" class="btn btn-primary">
+                    <i class="bi bi-plus-circle"></i> Create Schedule
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- Upcoming Holidays Card -->
+    <div class="col-md-6 mb-4">
+        <div class="card h-100 shadow">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-calendar-event"></i> Upcoming Holidays</h5>
+            </div>
+            <div class="card-body">
+                {% if upcoming_holidays %}
+                <ul class="list-group">
+                    {% for holiday in upcoming_holidays %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong>{{ holiday.date.strftime('%Y-%m-%d') }}</strong>
+                            <span class="text-muted ms-2">{{ holiday.description }}</span>
+                        </div>
+                        <span class="badge bg-primary rounded-pill">
+                            {{ (holiday.date - today).days }} days
+                        </span>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <div class="alert alert-info">
+                    No upcoming holidays.
+                </div>
+                {% endif %}
+                <div class="mt-3">
+                    <a href="{{ url_for('holidays.add') }}" class="btn btn-sm btn-primary">
+                        <i class="bi bi-plus-circle"></i> Add Holiday
+                    </a>
+                    <a href="{{ url_for('holidays.index') }}" class="btn btn-sm btn-outline-primary">
+                        <i class="bi bi-list"></i> View All
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Active Schedule Periods Card -->
+    <div class="col-md-6 mb-4">
+        <div class="card h-100 shadow">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-calendar-range"></i> Active Schedule Periods</h5>
+            </div>
+            <div class="card-body">
+                {% if active_periods %}
+                <div class="list-group">
+                    {% for period in active_periods %}
+                    <a href="{{ url_for('schedules.edit', period_id=period.id) }}" class="list-group-item list-group-item-action">
+                        <div class="d-flex w-100 justify-content-between">
+                            <h6 class="mb-1">{{ period.name }}</h6>
+                            <small>
+                                {% if period == current_schedule %}
+                                <span class="badge bg-success">Current</span>
+                                {% endif %}
+                            </small>
+                        </div>
+                        <p class="mb-1">{{ period.start_date.strftime('%Y-%m-%d') }} to {{ period.end_date.strftime('%Y-%m-%d') }}</p>
+                    </a>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="alert alert-warning">
+                    No active schedule periods.
+                </div>
+                {% endif %}
+                <div class="mt-3">
+                    <a href="{{ url_for('schedules.add') }}" class="btn btn-sm btn-primary">
+                        <i class="bi bi-plus-circle"></i> New Period
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Statistics Card -->
+    <div class="col-md-6 mb-4">
+        <div class="card h-100 shadow">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-graph-up"></i> Statistics</h5>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-6 mb-3">
+                        <div class="card bg-light">
+                            <div class="card-body py-3">
+                                <h2 class="card-title">{{ days_this_week }}</h2>
+                                <p class="card-text text-muted">Working Days This Week</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-6 mb-3">
+                        <div class="card bg-light">
+                            <div class="card-body py-3">
+                                <h2 class="card-title">{{ upcoming_holidays|length }}</h2>
+                                <p class="card-text text-muted">Upcoming Holidays</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

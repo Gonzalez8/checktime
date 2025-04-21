@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Day Schedules - {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h2><i class="bi bi-calendar-week"></i> Edit Day Schedules</h2>
+        <p class="text-muted">
+            Configure daily schedules for period: <strong>{{ period.name }}</strong>
+            ({{ period.start_date.strftime('%Y-%m-%d') }} to {{ period.end_date.strftime('%Y-%m-%d') }})
+        </p>
+    </div>
+    <div class="col-auto">
+        <a href="{{ url_for('schedules.index') }}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Back to Schedules
+        </a>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-12">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-clock"></i> Daily Check-in/Check-out Times</h5>
+            </div>
+            <div class="card-body">
+                <form method="post" action="{{ url_for('schedules.edit_days', period_id=period.id) }}">
+                    <div class="row">
+                        {% for day_idx in range(7) %}
+                        <div class="col-md-6 mb-4">
+                            <div class="card">
+                                <div class="card-header d-flex justify-content-between align-items-center">
+                                    <h6 class="mb-0">{{ days[day_idx] }}</h6>
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="day_{{ day_idx }}_toggle" 
+                                               onchange="toggleDayInputs({{ day_idx }})"
+                                               {% if day_idx in day_schedules %} checked {% endif %}>
+                                        <input type="hidden" name="day_{{ day_idx }}_enabled" id="day_{{ day_idx }}_enabled" 
+                                               value="{% if day_idx in day_schedules %}on{% endif %}">
+                                    </div>
+                                </div>
+                                <div class="card-body" id="day_{{ day_idx }}_inputs" 
+                                     {% if day_idx not in day_schedules %}style="display: none;"{% endif %}>
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label for="day_{{ day_idx }}_check_in" class="form-label">Check-in Time</label>
+                                            <input type="time" class="form-control" id="day_{{ day_idx }}_check_in" 
+                                                   name="day_{{ day_idx }}_check_in" 
+                                                   value="{{ day_schedules[day_idx].check_in_time if day_idx in day_schedules else '' }}">
+                                        </div>
+                                        <div class="col-md-6 mb-3">
+                                            <label for="day_{{ day_idx }}_check_out" class="form-label">Check-out Time</label>
+                                            <input type="time" class="form-control" id="day_{{ day_idx }}_check_out" 
+                                                   name="day_{{ day_idx }}_check_out" 
+                                                   value="{{ day_schedules[day_idx].check_out_time if day_idx in day_schedules else '' }}">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    
+                    <div class="d-grid gap-2 mt-4">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-save"></i> Save Day Schedules
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function toggleDayInputs(dayIndex) {
+        const checkbox = document.getElementById(`day_${dayIndex}_toggle`);
+        const inputs = document.getElementById(`day_${dayIndex}_inputs`);
+        const enabled = document.getElementById(`day_${dayIndex}_enabled`);
+        
+        inputs.style.display = checkbox.checked ? 'block' : 'none';
+        enabled.value = checkbox.checked ? 'on' : '';
+    }
+</script>
+{% endblock %} 

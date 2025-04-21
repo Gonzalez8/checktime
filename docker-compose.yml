@@ -1,16 +1,55 @@
-version: '3.8'
+version: '3'
 
 services:
+  db:
+    image: alpine:latest
+    container_name: checktime-db
+    volumes:
+      - ./db:/data
+    command: sh -c "mkdir -p /data && chmod 777 /data && touch /data/checktime.db && chmod 666 /data/checktime.db && tail -f /dev/null"
+    restart: unless-stopped
+
+  web:
+    build: .
+    container_name: checktime-web
+    depends_on:
+      - db
+    environment:
+      - CHECKJC_USERNAME=${CHECKJC_USERNAME}
+      - CHECKJC_PASSWORD=${CHECKJC_PASSWORD}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - DATABASE_URL=sqlite:////data/checktime.db
+      - PORT=5000
+      - PYTHONPATH=/app
+      - TZ=Europe/Madrid
+    volumes:
+      - ./config:/app/config
+      - ./logs:/app/logs
+      - ./db:/data
+    ports:
+      - "5000:5000"
+    command: python -m src.checktime.web.server
+    restart: unless-stopped
+
   bot:
     build: .
     container_name: checktime-bot
+    depends_on:
+      - db
     volumes:
       - .:/app
       - /var/log/checktime:/var/log/checktime
+      - ./db:/data
     env_file:
       - .env
     environment:
       - PYTHONPATH=/app
+      - DATABASE_URL=sqlite:////data/checktime.db
+      - TZ=Europe/Madrid
+    working_dir: /app
     command: python -m src.checktime.bot.listener
     restart: unless-stopped
     shm_size: '2gb'
@@ -18,13 +57,22 @@ services:
   fichar:
     build: .
     container_name: checktime-fichar
+    depends_on:
+      - db
     volumes:
       - .:/app
       - /var/log/checktime:/var/log/checktime
+      - ./db:/data
     env_file:
       - .env
     environment:
       - PYTHONPATH=/app
-    command: python -m src.checktime.main
+      - DATABASE_URL=sqlite:////data/checktime.db
+      - TZ=Europe/Madrid
+    command: python -m src.checktime.fichaje.service
     restart: unless-stopped
-    shm_size: '2gb' 
+    shm_size: '2gb'
+
+volumes:
+  database:
+    driver: local 
