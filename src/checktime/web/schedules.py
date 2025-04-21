@@ -118,10 +118,12 @@ def edit_days(period_id):
         
         # Add new day schedules from form data
         for day in range(7):  # 0-6 for Monday-Sunday
-            if f'day_{day}_enabled' in request.form:
-                check_in = request.form.get(f'day_{day}_check_in', '')
-                check_out = request.form.get(f'day_{day}_check_out', '')
+            # Only process days that are enabled
+            if f'day_{day}_enabled' in request.form and request.form.get(f'day_{day}_enabled') == 'on':
+                check_in = request.form.get(f'day_{day}_check_in', '').strip()
+                check_out = request.form.get(f'day_{day}_check_out', '').strip()
                 
+                # Only add if both times are provided
                 if check_in and check_out:
                     schedule = DaySchedule(
                         period_id=period_id,

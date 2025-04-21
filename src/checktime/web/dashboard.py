@@ -1,8 +1,8 @@
 from flask import Blueprint, render_template
 from flask_login import login_required, current_user
 
-from checktime.web.models import Holiday, SchedulePeriod
-from datetime import datetime
+from checktime.web.models import Holiday, SchedulePeriod, DaySchedule
+from datetime import datetime, timedelta
 
 dashboard_bp = Blueprint('dashboard', __name__)
 
@@ -33,8 +33,41 @@ def index():
         day_schedules = sorted(current_schedule.schedules, key=lambda x: x.day_of_week)
     
     # Weekly stats: number of working days
+    # Calculate start and end of current week
     weekday = today.weekday()
-    days_this_week = 5 - weekday if weekday < 5 else 0
+    start_of_week = today - timedelta(days=weekday)
+    end_of_week = start_of_week + timedelta(days=6)  # Sunday
+    
+    days_this_week = 0
+    
+    # Get holidays for this week
+    week_holidays = Holiday.query.filter(
+        Holiday.date >= start_of_week,
+        Holiday.date <= end_of_week
+    ).all()
+    holiday_dates = [h.date for h in week_holidays]
+    
+    # Count working days (weekdays with schedule that are not holidays)
+    if current_schedule:
+        scheduled_days = [day.day_of_week for day in current_schedule.schedules]
+        
+        for i in range(7):
+            check_date = start_of_week + timedelta(days=i)
+            # Skip days outside of schedule date range
+            if check_date < current_schedule.start_date or check_date > current_schedule.end_date:
+                continue
+            # Skip weekends (5=Sat, 6=Sun)
+            if check_date.weekday() >= 5:
+                continue
+            # Skip holidays
+            if check_date in holiday_dates:
+                continue
+            # Skip days without schedule
+            if check_date.weekday() not in scheduled_days:
+                continue
+            # If we get here, it's a working day
+            if check_date >= today:
+                days_this_week += 1
     
     return render_template(
         'dashboard/index.html',

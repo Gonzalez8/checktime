@@ -80,9 +80,17 @@
         const checkbox = document.getElementById(`day_${dayIndex}_toggle`);
         const inputs = document.getElementById(`day_${dayIndex}_inputs`);
         const enabled = document.getElementById(`day_${dayIndex}_enabled`);
+        const checkInInput = document.getElementById(`day_${dayIndex}_check_in`);
+        const checkOutInput = document.getElementById(`day_${dayIndex}_check_out`);
         
         inputs.style.display = checkbox.checked ? 'block' : 'none';
         enabled.value = checkbox.checked ? 'on' : '';
+        
+        // Clear time inputs when disabled
+        if (!checkbox.checked) {
+            checkInInput.value = '';
+            checkOutInput.value = '';
+        }
     }
 </script>
 {% endblock %} 
