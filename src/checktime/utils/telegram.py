@@ -71,19 +71,4 @@ class TelegramClient:
             error_msg = f"Error obteniendo actualizaciones de Telegram: {e}"
             error_logger.error(error_msg)
             bot_logger.error(error_msg)
-            return {"result": []}
-    
-    def format_holiday_list(self, holidays: list) -> str:
-        """
-        Formatea la lista de festivos para enviar por Telegram.
-        
-        Args:
-            holidays (list): Lista de fechas festivas
-        
-        Returns:
-            str: Mensaje formateado
-        """
-        if not holidays:
-            return "📅 No hay festivos guardados."
-        
-        return "📅 *Festivos registrados:*\n" + "\n".join(f"• `{d}`" for d in holidays) 
+            return {"result": []} 

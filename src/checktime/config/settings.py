@@ -43,7 +43,6 @@ LOG_FILE = LOG_DIR / 'autofichar.log'
 ERROR_LOG_FILE = LOG_DIR / 'error.log'
 
 # Rutas de archivos
-FESTIVOS_FILE = BASE_DIR / 'config' / 'festivos.txt'
 LOG_FILE = LOG_DIR / 'fichar.log'
 ERROR_LOG_FILE = LOG_DIR / 'error.log'
 
