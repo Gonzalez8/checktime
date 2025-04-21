@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <h1 class="mb-4">Add Holiday Range</h1>
+            <div class="card">
+                <div class="card-body">
+                    <p class="text-muted">
+                        This form allows you to add multiple holidays within a date range. 
+                        <strong>Weekends will be skipped</strong> and <strong>existing holidays will be preserved</strong>.
+                    </p>
+                    <form method="POST" action="{{ url_for('holidays.add_range') }}">
+                        {{ form.hidden_tag() }}
+                        <div class="mb-3">
+                            <label for="start_date" class="form-label">{{ form.start_date.label }}</label>
+                            {{ form.start_date(class="form-control", type="date") }}
+                            {% if form.start_date.errors %}
+                                <div class="invalid-feedback d-block">
+                                    {% for error in form.start_date.errors %}
+                                        {{ error }}
+                                    {% endfor %}
+                                </div>
+                            {% endif %}
+                        </div>
+                        <div class="mb-3">
+                            <label for="end_date" class="form-label">{{ form.end_date.label }}</label>
+                            {{ form.end_date(class="form-control", type="date") }}
+                            {% if form.end_date.errors %}
+                                <div class="invalid-feedback d-block">
+                                    {% for error in form.end_date.errors %}
+                                        {{ error }}
+                                    {% endfor %}
+                                </div>
+                            {% endif %}
+                        </div>
+                        <div class="mb-3">
+                            <label for="description" class="form-label">{{ form.description.label }}</label>
+                            {{ form.description(class="form-control") }}
+                            {% if form.description.errors %}
+                                <div class="invalid-feedback d-block">
+                                    {% for error in form.description.errors %}
+                                        {{ error }}
+                                    {% endfor %}
+                                </div>
+                            {% endif %}
+                        </div>
+                        <div class="mb-3">
+                            {{ form.submit(class="btn btn-primary") }}
+                            <a href="{{ url_for('holidays.index') }}" class="btn btn-secondary">Cancel</a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

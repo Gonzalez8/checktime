@@ -1,116 +1,151 @@
 # CheckTime
 
-Una aplicación para automatizar el fichaje de entrada y salida en el sistema CheckJC.
+An application for automating check-in and check-out on the CheckJC system.
 
-## Características
+## Features
 
-- Automatización del fichaje de entrada y salida en días laborables
-- Detección automática de fines de semana y días festivos
-- Integración con Telegram para recibir notificaciones
-- Interfaz web para configurar horarios y días festivos
+- Automated check-in and check-out on working days
+- Automatic detection of weekends and holidays
+- Telegram integration for notifications and commands
+- Web interface to configure schedules and holidays
 
-## Arquitectura de Servicios
+## Service Architecture
 
-CheckTime está organizado en cuatro servicios independientes, cada uno con una única responsabilidad:
+CheckTime is organized into four independent services, each with a single responsibility:
 
-1. **Servicio Web**: Proporciona la interfaz de usuario web para administrar el sistema
-2. **Servicio de Fichaje**: Realiza los fichajes automáticos según los horarios configurados
-3. **Servicio de Bot**: Maneja la integración con Telegram para notificaciones y comandos
-4. **Servicio de Base de Datos**: Gestiona el almacenamiento persistente de datos (SQLite) para horarios, festivos y configuración
+1. **Web Service**: Provides the web user interface for system administration
+2. **Check-in Service**: Performs automatic clock-in/clock-out according to configured schedules
+3. **Bot Service**: Handles Telegram integration for notifications and commands
+4. **Database Service**: Manages persistent data storage (SQLite) for schedules, holidays, and configuration
 
-Esta separación garantiza mayor estabilidad, mantenibilidad y escalabilidad del sistema.
+This separation ensures greater stability, maintainability, and scalability of the system.
 
-## Interfaz Web
+## Services Explained
 
-La interfaz web permite:
+### Web Service
+The web interface provides an intuitive dashboard for administrators to:
+- View current configuration and system status
+- Manage holidays (add individual days or date ranges)
+- Configure schedule periods (e.g., summer schedule, winter schedule)
+- Set check-in/check-out times for each day of the week
+- Synchronize holiday data between database and check-in service
 
-- Gestionar días festivos
-- Configurar diferentes periodos de horarios (ej. horario de verano, horario de invierno)
-- Establecer horarios de fichaje diferentes para cada día de la semana
-- Ver un resumen de la configuración actual
+### Check-in Service
+This service handles the automation of clock-in/clock-out actions:
+- Runs according to the schedules configured in the web interface
+- Automatically detects and skips weekends and holidays
+- Uses a Chrome webdriver to interact with the CheckJC system
+- Logs all actions for auditing and troubleshooting
+- Sends notifications of successful or failed check-ins via Telegram
 
-## Requisitos
+### Bot Service
+The Telegram bot provides remote management capabilities:
+- Allows holiday management directly from your phone
+- Sends notifications about check-in/check-out events
+- Provides status updates about the system
+- Allows administrators to add, remove, or list holidays remotely
+
+### Database Service
+Manages a SQLite database that stores:
+- Holiday information (date and description)
+- Schedule periods and their date ranges
+- Daily check-in/check-out times for each schedule period
+
+## Telegram Commands
+
+The following commands are available in the Telegram bot:
+
+- `/addfestivo YYYY-MM-DD [description]` - Add a new holiday date with optional description
+  Example: `/addfestivo 2023-12-25 Christmas Day`
+
+- `/delfestivo YYYY-MM-DD` - Delete a holiday date
+  Example: `/delfestivo 2023-12-25`
+
+- `/listfestivos` - List upcoming holidays for the current year
+  Shows dates, descriptions, and how many days until each holiday
+
+## Requirements
 
 - Python 3.8+
 - Google Chrome
-- ChromeDriver (compatible con la versión de Chrome instalada)
-- Docker y Docker Compose (recomendado para despliegue)
+- ChromeDriver (compatible with your installed Chrome version)
+- Docker and Docker Compose (recommended for deployment)
 
-## Configuración
+## Configuration
 
-1. Copia el archivo `.env.example` a `.env` y configura las variables de entorno:
+1. Copy the `.env.example` file to `.env` and configure the environment variables:
    ```
    cp .env.example .env
    ```
 
-2. Edita el archivo `.env` con tus credenciales y configuración:
+2. Edit the `.env` file with your credentials and configuration:
    ```
-   # Credenciales
-   CHECKJC_USERNAME=tu_usuario
-   CHECKJC_PASSWORD=tu_contraseña
+   # Credentials
+   CHECKJC_USERNAME=your_username
+   CHECKJC_PASSWORD=your_password
    
-   # Telegram (opcional)
-   TELEGRAM_BOT_TOKEN=tu_token
-   TELEGRAM_CHAT_ID=tu_chat_id
+   # Telegram (optional)
+   TELEGRAM_BOT_TOKEN=your_token
+   TELEGRAM_CHAT_ID=your_chat_id
    
-   # Configuración Web
-   FLASK_SECRET_KEY=clave_secreta_para_flask
-   ADMIN_PASSWORD=contraseña_administrador
+   # Web Configuration
+   FLASK_SECRET_KEY=flask_secret_key
+   ADMIN_PASSWORD=admin_password
    ```
 
-## Instalación y Ejecución
+## Installation and Execution
 
-### Con Docker Compose (recomendado)
+### With Docker Compose (recommended)
 
-1. Construye y ejecuta todos los servicios:
+1. Build and run all services:
    ```
    docker compose up -d
    ```
 
-2. Accede a la interfaz web en: http://localhost:5000
+2. Access the web interface at: http://localhost:5000
 
-3. Para iniciar servicios específicos:
+3. To start specific services:
    ```
-   docker compose up -d web    # Solo la interfaz web
-   docker compose up -d fichar # Solo el servicio de fichaje
-   docker compose up -d bot    # Solo el bot de Telegram
-   docker compose up -d db     # Solo la base de datos
+   docker compose up -d web    # Just the web interface
+   docker compose up -d fichar # Just the check-in service
+   docker compose up -d bot    # Just the Telegram bot
+   docker compose up -d db     # Just the database
    ```
 
-   Nota: El servicio de base de datos se inicia automáticamente como dependencia cuando se inician los demás servicios.
+   Note: The database service automatically starts as a dependency when other services are started.
 
-### Sin Docker (Desarrollo)
+### Without Docker (Development)
 
-1. Crea un entorno virtual e instala las dependencias:
+1. Create a virtual environment and install dependencies:
    ```
    python -m venv venv
-   source venv/bin/activate  # En Windows: venv\Scripts\activate
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
    pip install -r requirements.txt
    pip install -e .
    ```
 
-2. Ejecuta cada servicio por separado:
+2. Run each service separately:
    ```
-   # Interfaz web
+   # Web interface
    python -m src.checktime.web.server
    
-   # Servicio de fichaje
+   # Check-in service
    python -m src.checktime.fichaje.service
    
-   # Bot de Telegram
+   # Telegram bot
    python -m src.checktime.bot.listener
    ```
 
-## Uso de la interfaz web
+## Using the Web Interface
 
-1. Accede a http://localhost:5000
-2. Inicia sesión con el usuario `admin` y la contraseña configurada en `ADMIN_PASSWORD`
-3. Desde el panel de control podrás:
-   - Ver resumen de la configuración actual
-   - Gestionar días festivos
-   - Configurar periodos de horarios
-   - Establecer horarios de fichaje por día de la semana
+1. Access http://localhost:5000
+2. Log in with username `admin` and the password configured in `ADMIN_PASSWORD`
+3. From the dashboard you can:
+   - View summary of current configuration
+   - Manage holidays
+   - Configure schedule periods
+   - Set check-in/check-out times for each day of the week
 
-## Licencia
+## License
 
-Este proyecto está licenciado bajo la licencia MIT. 
+This project is licensed under the MIT License. 

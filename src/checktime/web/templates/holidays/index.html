@@ -9,8 +9,11 @@
         <p class="text-muted">Manage holidays for automatic check-in/check-out system.</p>
     </div>
     <div class="col-auto">
-        <a href="{{ url_for('holidays.add') }}" class="btn btn-primary">
+        <a href="{{ url_for('holidays.add') }}" class="btn btn-primary me-2">
             <i class="bi bi-plus-circle"></i> Add Holiday
+        </a>
+        <a href="{{ url_for('holidays.add_range') }}" class="btn btn-primary">
+            <i class="bi bi-calendar-range"></i> Add Date Range
         </a>
     </div>
 </div>
