@@ -37,17 +37,42 @@ app = create_app()
 def is_working_day():
     """Verifica si hoy es un día laborable."""
     today = datetime.now().date()
+    weekday = today.weekday()
     
     # Verificar si es fin de semana
-    if today.weekday() >= 5:  # 5 es sábado, 6 es domingo
+    if weekday >= 5:  # 5 es sábado, 6 es domingo
+        logger.info(f"Hoy es fin de semana: {today}")
         return False
     
     # Verificar festivos en la base de datos
     with app.app_context():
+        # Check if it's a holiday
         if Holiday.query.filter_by(date=today).first():
             logger.info(f"Día festivo encontrado en la base de datos: {today}")
             return False
+        
+        # Check if there's a schedule for today
+        active_period = SchedulePeriod.query.filter(
+            SchedulePeriod.is_active == True,
+            SchedulePeriod.start_date <= today,
+            SchedulePeriod.end_date >= today
+        ).first()
+        
+        if not active_period:
+            logger.info(f"No hay un periodo activo para hoy: {today}")
+            return False
+        
+        # Check if there's a schedule configured for this day of the week
+        day_schedule = DaySchedule.query.filter_by(
+            period_id=active_period.id,
+            day_of_week=weekday
+        ).first()
+        
+        if not day_schedule:
+            logger.info(f"No hay horario configurado para hoy ({weekday}): {today}")
+            return False
     
+    logger.info(f"Hoy es día laborable: {today}")
     return True
 
 def get_schedule_times():
