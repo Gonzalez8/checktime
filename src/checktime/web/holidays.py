@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, redirect, url_for, flash, request
+from flask import Blueprint, render_template, redirect, url_for, flash, request, current_app, session, g
 from flask_login import login_required, current_user
 from flask_wtf import FlaskForm
 from flask_wtf.file import FileField, FileRequired, FileAllowed
@@ -7,6 +7,7 @@ from wtforms.validators import DataRequired, ValidationError
 from datetime import datetime, timedelta
 import os
 import tempfile
+import logging
 
 # Importación segura de icalendar
 try:
@@ -17,37 +18,82 @@ except ImportError:
 
 from checktime.web.models import db, Holiday
 from checktime.fichaje.holidays import HolidayManager
+from checktime.web.translations import get_translation
 
 holidays_bp = Blueprint('holidays', __name__, url_prefix='/holidays')
+
+def get_language():
+    """Get the current language from session or default to 'en'"""
+    return session.get('lang', 'en')
 
 class HolidayForm(FlaskForm):
     date = DateField('Date', format='%Y-%m-%d', validators=[DataRequired()])
     description = StringField('Description', validators=[DataRequired()])
     submit = SubmitField('Save')
+    
+    def __init__(self, *args, **kwargs):
+        super(HolidayForm, self).__init__(*args, **kwargs)
+        # Set translated labels
+        lang = get_language()
+        self.date.label.text = get_translation('date', lang)
+        self.description.label.text = get_translation('description', lang)
+        self.submit.label.text = get_translation('btn_save_holiday', lang)
 
 class HolidayRangeForm(FlaskForm):
     start_date = DateField('Start Date', format='%Y-%m-%d', validators=[DataRequired()])
     end_date = DateField('End Date', format='%Y-%m-%d', validators=[DataRequired()])
     description = StringField('Description', validators=[DataRequired()])
-    submit = SubmitField('Add Holidays')
+    submit = SubmitField('Add Range')
+    
+    def __init__(self, *args, **kwargs):
+        super(HolidayRangeForm, self).__init__(*args, **kwargs)
+        # Set translated labels
+        lang = get_language()
+        self.start_date.label.text = get_translation('start_date', lang)
+        self.end_date.label.text = get_translation('end_date', lang)
+        self.description.label.text = get_translation('description', lang)
+        self.submit.label.text = get_translation('btn_add_range', lang)
     
     def validate_end_date(self, field):
         if field.data < self.start_date.data:
-            raise ValidationError('End date must be after start date')
+            lang = get_language()
+            raise ValidationError(get_translation('end_date_after_start', lang))
 
-class ICalendarImportForm(FlaskForm):
-    ics_file = FileField('ICS File', validators=[
-        FileRequired(),
-        FileAllowed(['ics'], 'Only ICS files are allowed!')
-    ])
-    submit = SubmitField('Import Holidays')
+# Import from iCalendar if the library is available
+try:
+    from icalendar import Calendar
+    
+    class ICalendarImportForm(FlaskForm):
+        ics_file = FileField('ICS File', validators=[
+            FileRequired(),
+            FileAllowed(['ics'], 'Only ICS files are allowed!')
+        ])
+        submit = SubmitField('Import Holidays')
+        
+        def __init__(self, *args, **kwargs):
+            super(ICalendarImportForm, self).__init__(*args, **kwargs)
+            # Set translated labels
+            lang = get_language()
+            self.ics_file.label.text = get_translation('ics_file', lang)
+            self.submit.label.text = get_translation('btn_import_holidays', lang)
+    
+    ICALENDAR_AVAILABLE = True
+except ImportError:
+    ICALENDAR_AVAILABLE = False
+    logging.warning("icalendar library not available. ICS import disabled.")
+
+def flash_message(key, category='success'):
+    """Flash a message with proper translation based on current language context"""
+    # Get language from Flask g object if available, otherwise from session
+    lang = getattr(g, 'language', get_language())
+    flash(get_translation(key, lang), category)
 
 @holidays_bp.route('/')
 @login_required
 def index():
     """List all holidays."""
     holidays = Holiday.query.order_by(Holiday.date).all()
-    return render_template('holidays/index.html', title='Holidays', holidays=holidays)
+    return render_template('holidays/index.html', title='Holidays', holidays=holidays, icalendar_available=ICALENDAR_AVAILABLE)
 
 @holidays_bp.route('/add', methods=['GET', 'POST'])
 @login_required
@@ -58,14 +104,14 @@ def add():
         # Check if holiday already exists
         existing = Holiday.query.filter_by(date=form.date.data).first()
         if existing:
-            flash('Holiday already exists for this date','danger')
+            flash_message('holiday_already_exists', 'danger')
             return redirect(url_for('holidays.index'))
         
         # Add to database
         holiday = Holiday(date=form.date.data, description=form.description.data)
         db.session.add(holiday)
         db.session.commit()
-        flash('Holiday added successfully')
+        flash_message('holiday_added')
         return redirect(url_for('holidays.index'))
     
     return render_template('holidays/add.html', title='Add Holiday', form=form)
@@ -76,12 +122,15 @@ def edit(id):
     """Edit an existing holiday."""
     holiday = Holiday.query.get_or_404(id)
     form = HolidayForm(obj=holiday)
+    # Update the submit button label to reflect an update operation
+    lang = get_language()
+    form.submit.label.text = get_translation('btn_update_holiday', lang)
     
     if form.validate_on_submit():
         holiday.date = form.date.data
         holiday.description = form.description.data
         db.session.commit()
-        flash('Holiday updated successfully')
+        flash_message('holiday_updated')
         return redirect(url_for('holidays.index'))
     
     return render_template('holidays/edit.html', title='Edit Holiday', form=form, holiday=holiday)
@@ -94,7 +143,7 @@ def delete(id):
     db.session.delete(holiday)
     db.session.commit()
     
-    flash('Holiday deleted successfully')
+    flash_message('holiday_deleted')
     return redirect(url_for('holidays.index'))
 
 @holidays_bp.route('/sync')
@@ -115,7 +164,7 @@ def sync():
         date_str = holiday.date.strftime('%Y-%m-%d')
         holiday_manager.add_holiday(date_str, description=holiday.description)
     
-    flash('Database holiday state synchronized successfully')
+    flash_message('holidays_synced')
     return redirect(url_for('holidays.index'))
 
 @holidays_bp.route('/add-range', methods=['GET', 'POST'])
@@ -165,11 +214,13 @@ def add_range():
             for date in [h.date for h in Holiday.query.filter(Holiday.date >= start_date, Holiday.date <= end_date).all()]:
                 date_str = date.strftime('%Y-%m-%d')
                 holiday_manager.add_holiday(date_str, description=description)
-                
-            flash(f'Successfully added {days_added} holidays. Skipped {weekends_skipped} weekend days and {existing_skipped} existing holidays.', 'success')
+            
+            # Get language for custom message construction
+            lang = getattr(g, 'language', get_language())
+            flash(f"{get_translation('holidays_added_success', lang)} {days_added} {get_translation('holidays', lang).lower()}. {get_translation('skipped', lang)} {weekends_skipped} {get_translation('weekends', lang).lower()} {get_translation('and', lang)} {existing_skipped} {get_translation('existing_holidays', lang).lower()}", 'success')
             return redirect(url_for('holidays.index'))
         else:
-            flash('No holidays were added. All dates in the range were either weekends or already holidays.', 'warning')
+            flash_message('no_holidays_added', 'warning')
     
     return render_template('holidays/add_range.html', form=form, title='Add Holiday Range')
 
@@ -179,7 +230,7 @@ def import_ics():
     """Import holidays from an ICS file."""
     # Verificar si la biblioteca icalendar está disponible
     if not HAS_ICALENDAR:
-        flash('The icalendar library is not installed. Please install it to use this feature.', 'danger')
+        flash_message('icalendar_not_installed', 'danger')
         return redirect(url_for('holidays.index'))
     
     form = ICalendarImportForm()
@@ -212,7 +263,8 @@ def import_ics():
                             event_date = event_date.date()
                         
                         # Get event summary/description
-                        summary = component.get('summary', 'Imported Holiday')
+                        lang = getattr(g, 'language', get_language())
+                        summary = component.get('summary', get_translation('imported_holiday', lang))
                         
                         # Check if holiday already exists
                         existing = Holiday.query.filter_by(date=event_date).first()
@@ -237,13 +289,16 @@ def import_ics():
                         date_str = holiday.date.strftime('%Y-%m-%d')
                         holiday_manager.add_holiday(date_str, description=holiday.description)
                     
-                    flash(f'Successfully imported {events_added} holidays. {duplicates} duplicates were skipped.', 'success')
+                    lang = getattr(g, 'language', get_language())
+                    flash(f"{get_translation('import_success', lang)} {events_added} {get_translation('holidays', lang).lower()}. {duplicates} {get_translation('duplicates_skipped', lang)}", 'success')
                     return redirect(url_for('holidays.index'))
                 else:
-                    flash(f'No holidays were imported. {duplicates} duplicates were found.', 'warning')
+                    lang = getattr(g, 'language', get_language())
+                    flash(f"{get_translation('no_holidays_imported', lang)} {duplicates} {get_translation('duplicates_found', lang)}", 'warning')
                     
             except Exception as e:
-                flash(f'Error importing ICS file: {str(e)}', 'danger')
+                lang = getattr(g, 'language', get_language())
+                flash(f"{get_translation('error_importing_ics', lang)}: {str(e)}", 'danger')
             finally:
                 # Clean up the temporary file
                 try:
@@ -251,6 +306,68 @@ def import_ics():
                 except:
                     pass
         except Exception as outer_e:
-            flash(f'Error processing the file: {str(outer_e)}', 'danger')
+            lang = getattr(g, 'language', get_language())
+            flash(f"{get_translation('error_processing_file', lang)}: {str(outer_e)}", 'danger')
     
-    return render_template('holidays/import_ics.html', form=form, title='Import Holidays from ICS') 
+    return render_template('holidays/import_ics.html', form=form, title='Import Holidays from ICS')
+
+if ICALENDAR_AVAILABLE:
+    @holidays_bp.route('/import_ical', methods=['GET', 'POST'])
+    @login_required
+    def import_ical():
+        """Import holidays from an iCalendar file."""
+        form = ICalendarImportForm()
+        if form.validate_on_submit():
+            try:
+                file_data = request.files['ics_file'].read()
+                cal = Calendar.from_ical(file_data)
+                
+                added_count = 0
+                skipped_count = 0
+                
+                holiday_manager = HolidayManager()
+                
+                for component in cal.walk():
+                    if component.name == "VEVENT":
+                        event_date = component.get('dtstart').dt
+                        
+                        # Skip if not a date (e.g. datetime)
+                        if not isinstance(event_date, datetime.date):
+                            continue
+                        
+                        summary = str(component.get('summary', 'Imported Holiday'))
+                        
+                        # Check if holiday already exists
+                        existing = Holiday.query.filter_by(date=event_date).first()
+                        if existing:
+                            skipped_count += 1
+                        else:
+                            # Create new holiday
+                            holiday = Holiday(date=event_date, description=summary)
+                            db.session.add(holiday)
+                            
+                            # Add to holiday file
+                            try:
+                                date_str = event_date.strftime('%Y-%m-%d')
+                                holiday_manager.add_holiday(date_str)
+                                added_count += 1
+                            except Exception as e:
+                                logging.error(f"Error adding holiday {date_str} to file: {str(e)}")
+                
+                # Commit all changes
+                db.session.commit()
+                
+                # Flash message with results
+                lang = get_language()
+                if added_count > 0:
+                    flash(get_translation('holidays_imported', lang).format(count=added_count))
+                if skipped_count > 0:
+                    flash(get_translation('holidays_skipped', lang).format(count=skipped_count), 'warning')
+                    
+                return redirect(url_for('holidays.index'))
+            except Exception as e:
+                logging.error(f"Error importing iCalendar: {str(e)}")
+                lang = get_language()
+                flash(get_translation('error_importing', lang), 'error')
+        
+        return render_template('holidays/import_ical.html', form=form) 
