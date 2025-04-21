@@ -42,7 +42,7 @@ RUN wget -q "https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/${CHROM
     && rm -rf /tmp/chromedriver-linux64 chromedriver-linux64.zip
 
 # Crear y establecer el directorio de trabajo
-WORKDIR /app
+WORKDIR /root/apps/CheckTime
 
 # Instalar dependencias de Python
 COPY requirements.txt .
@@ -54,8 +54,17 @@ COPY . .
 # Instalar el paquete en modo desarrollo
 RUN pip install -e .
 
-# Crear directorio para logs
-RUN mkdir -p /var/log/checktime
+# Asegurarse de que el módulo está en el PYTHONPATH
+ENV PYTHONPATH=/root/apps/CheckTime
+
+# Crear directorios necesarios
+RUN mkdir -p /root/apps/CheckTime/logs
+RUN mkdir -p /root/apps/CheckTime/config
+RUN mkdir -p /root/apps/CheckTime/instance && chmod 777 /root/apps/CheckTime/instance
+RUN mkdir -p /app/db && chmod 777 /app/db
+
+# Exponer el puerto para la aplicación web
+EXPOSE 5000
 
 # Comando por defecto
 CMD ["python", "-m", "src.checktime.main"]

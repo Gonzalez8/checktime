@@ -2,62 +2,127 @@ import os
 import datetime
 from typing import List, Set
 from ..utils.logger import bot_logger, error_logger
-from ..config.settings import FESTIVOS_FILE
 
 class HolidayManager:
     """Gestor de días festivos."""
     
-    def __init__(self, festivos_file: str = FESTIVOS_FILE):
+    def __init__(self, holidays_file=None):
         """
         Inicializa el gestor de festivos.
-        
-        Args:
-            festivos_file (str): Ruta al archivo de festivos
         """
-        self.festivos_file = festivos_file
-        # Asegurar que el directorio existe
-        os.makedirs(os.path.dirname(self.festivos_file), exist_ok=True)
-        # Crear el archivo si no existe
-        if not os.path.exists(self.festivos_file):
-            with open(self.festivos_file, 'w') as f:
-                f.write("")
-            bot_logger.info(f"Archivo de festivos creado: {self.festivos_file}")
+        pass
+    
+    def _require_app_context(self):
+        """
+        Ensure that we're in an application context.
+        """
+        try:
+            from flask import current_app
+            # First check if we're already in an app context
+            current_app._get_current_object()
+            return None
+        except Exception:
+            # If not, create a temporary application context
+            from ..web import create_app
+            app = create_app()
+            return app.app_context()
     
     def load_holidays(self) -> Set[str]:
         """
-        Carga los festivos desde el archivo.
+        Carga los festivos desde la base de datos.
         
         Returns:
             Set[str]: Conjunto de fechas festivas
         """
+        ctx = None
         try:
-            with open(self.festivos_file, 'r') as f:
-                festivos = {line.strip() for line in f if line.strip()}
-            return festivos
+            ctx = self._require_app_context()
+            if ctx:
+                ctx.push()
+            
+            try:
+                # Intenta usar el modelo Holiday primero
+                from ..web.models import Holiday
+                holidays = set(Holiday.get_all_dates())
+                if holidays:
+                    return holidays
+            except Exception as db_error:
+                error_msg = f"Error al acceder a los festivos a través del modelo: {db_error}"
+                error_logger.warning(error_msg)
+                bot_logger.warning(error_msg)
+            
+            # Si falla, intenta con SQLite directamente
+            import sqlite3
+            import os
+            
+            # Use the configured database URL
+            db_url = os.getenv('DATABASE_URL', 'sqlite:////data/checktime.db')
+            if db_url.startswith('sqlite:///'):
+                db_path = db_url[10:]  # Remove sqlite:/// prefix
+                
+                if os.path.exists(db_path):
+                    # Accede a la base de datos usando SQLite directamente
+                    conn = sqlite3.connect(db_path)
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT strftime('%Y-%m-%d', date) FROM holiday")
+                    holidays = set([row[0] for row in cursor.fetchall()])
+                    conn.close()
+                    return holidays
+            
+            # Si no se encuentra la base de datos, devuelve un conjunto vacío
+            return set()
         except Exception as e:
             error_msg = f"Error cargando festivos: {e}"
             error_logger.error(error_msg)
             bot_logger.error(error_msg)
             return set()
+        finally:
+            if ctx:
+                try:
+                    ctx.pop()
+                except Exception:
+                    # Context may have already been popped
+                    pass
     
-    def save_holidays(self, holidays: Set[str]) -> None:
+    def save_holidays(self, holidays: Set[str]):
         """
-        Guarda los festivos en el archivo.
+        Guarda los festivos en la base de datos.
         
         Args:
             holidays (Set[str]): Conjunto de fechas festivas
         """
+        ctx = None
         try:
-            holidays_ordered = sorted(holidays, key=lambda d: datetime.datetime.strptime(d, "%Y-%m-%d"))
-            with open(self.festivos_file, 'w') as f:
-                for date in holidays_ordered:
-                    f.write(f"{date}\n")
-            bot_logger.info("Festivos guardados correctamente")
+            ctx = self._require_app_context()
+            if ctx:
+                ctx.push()
+            
+            # Import here to avoid circular imports
+            from ..web.models import Holiday, db
+            
+            # Delete all holidays
+            Holiday.query.delete()
+            
+            # Add new holidays if any
+            for date_str in holidays:
+                date_obj = datetime.datetime.strptime(date_str, "%Y-%m-%d").date()
+                holiday = Holiday(date=date_obj, description="Added via save_holidays")
+                db.session.add(holiday)
+                
+            db.session.commit()
+            bot_logger.info("Holidays saved successfully")
         except Exception as e:
-            error_msg = f"Error guardando festivos: {e}"
+            error_msg = f"Error saving holidays: {e}"
             error_logger.error(error_msg)
             bot_logger.error(error_msg)
             raise
+        finally:
+            if ctx:
+                try:
+                    ctx.pop()
+                except Exception:
+                    # Context may have already been popped
+                    pass
     
     def add_holiday(self, date: str) -> bool:
         """
@@ -71,19 +136,36 @@ class HolidayManager:
         """
         try:
             # Validar formato de fecha
-            datetime.datetime.strptime(date, "%Y-%m-%d")
-            holidays = self.load_holidays()
-
-            if date in holidays:
+            date_obj = datetime.datetime.strptime(date, "%Y-%m-%d").date()
+            
+            ctx = self._require_app_context()
+            if ctx:
+                ctx.push()
+            
+            # Import here to avoid circular imports
+            from ..web.models import Holiday, db
+            
+            # Check if holiday already exists
+            existing = Holiday.query.filter_by(date=date_obj).first()
+            if existing:
                 bot_logger.warning(f"Intento de añadir festivo ya existente: {date}")
+                if ctx:
+                    ctx.pop()
                 return False
-
-            holidays.add(date)
-            self.save_holidays(holidays)
+            
+            # Add to database
+            holiday = Holiday(date=date_obj, description=f"Added via API on {datetime.datetime.now()}")
+            db.session.add(holiday)
+            db.session.commit()
+            
             bot_logger.info(f"Festivo añadido: {date}")
+            
+            if ctx:
+                ctx.pop()
+                
             return True
         except ValueError:
-            error_msg = "Formato de fecha inválido"
+            error_msg = f"Formato de fecha inválido: {date}"
             error_logger.error(error_msg)
             return False
         except Exception as e:
@@ -102,15 +184,32 @@ class HolidayManager:
             bool: True si se eliminó correctamente, False en caso contrario
         """
         try:
-            holidays = self.load_holidays()
-
-            if date not in holidays:
+            # Validar formato de fecha
+            date_obj = datetime.datetime.strptime(date, "%Y-%m-%d").date()
+            
+            ctx = self._require_app_context()
+            if ctx:
+                ctx.push()
+            
+            # Import here to avoid circular imports
+            from ..web.models import Holiday, db
+            
+            # Find and delete the holiday
+            holiday = Holiday.query.filter_by(date=date_obj).first()
+            if not holiday:
                 bot_logger.warning(f"Intento de eliminar festivo inexistente: {date}")
+                if ctx:
+                    ctx.pop()
                 return False
-
-            holidays.remove(date)
-            self.save_holidays(holidays)
+            
+            db.session.delete(holiday)
+            db.session.commit()
+            
             bot_logger.info(f"Festivo eliminado: {date}")
+            
+            if ctx:
+                ctx.pop()
+                
             return True
         except Exception as e:
             error_msg = f"Error al eliminar festivo: {e}"
@@ -142,4 +241,18 @@ class HolidayManager:
             List[str]: Lista ordenada de fechas festivas
         """
         holidays = self.load_holidays()
-        return sorted(holidays, key=lambda d: datetime.datetime.strptime(d, "%Y-%m-%d")) 
+        return sorted(holidays, key=lambda d: datetime.datetime.strptime(d, "%Y-%m-%d"))
+    
+    def clear_holidays(self) -> bool:
+        """
+        Remove all holidays from the holiday file.
+        
+        Returns:
+            bool: True if holidays were cleared successfully, False otherwise
+        """
+        try:
+            self.save_holidays(set())
+            return True
+        except Exception as e:
+            error_logger.error(f"Error clearing holidays: {e}")
+            return False 

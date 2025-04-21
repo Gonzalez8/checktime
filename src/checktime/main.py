@@ -3,6 +3,8 @@ import schedule
 import time
 from datetime import datetime
 from pathlib import Path
+import threading
+import os
 
 from checktime.core.checker import CheckJCClient
 from checktime.config.settings import (
@@ -11,7 +13,8 @@ from checktime.config.settings import (
     SELENIUM_TIMEOUT,
 )
 from checktime.utils.telegram import TelegramClient
-from checktime.core.holidays import HolidayManager
+from checktime.web import create_app
+from checktime.web.models import SchedulePeriod, DaySchedule, Holiday
 
 # Configurar logging
 logging.basicConfig(
@@ -24,30 +27,57 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Inicializar cliente de Telegram y gestor de festivos
+# Inicializar cliente de Telegram
 telegram_client = TelegramClient()
-holiday_manager = HolidayManager()
+
+# Create flask app
+app = create_app()
 
 def is_working_day():
     """Verifica si hoy es un día laborable."""
-    today = datetime.now()
+    today = datetime.now().date()
+    
     # Verificar si es fin de semana
     if today.weekday() >= 5:  # 5 es sábado, 6 es domingo
         return False
-    # Verificar si es festivo
-    if holiday_manager.is_holiday():
-        return False
+    
+    # Verificar festivos en la base de datos
+    with app.app_context():
+        if Holiday.query.filter_by(date=today).first():
+            logger.info(f"Día festivo encontrado en la base de datos: {today}")
+            return False
+    
     return True
 
 def get_schedule_times():
-    """Get check-in and check-out times based on the day of the week"""
-    today = datetime.now()
+    """Get check-in and check-out times based on the current schedule in database"""
+    today = datetime.now().date()
     weekday = today.weekday()
     
-    if weekday < 4:  # Monday to Thursday
-        return "09:00", "18:00"
-    else:  # Friday
-        return "08:00", "15:00"
+    # Get schedule from database
+    with app.app_context():
+        # Get active period for today
+        active_period = SchedulePeriod.query.filter(
+            SchedulePeriod.is_active == True,
+            SchedulePeriod.start_date <= today,
+            SchedulePeriod.end_date >= today
+        ).first()
+        
+        if active_period:
+            # Get day schedule for today's weekday
+            day_schedule = DaySchedule.query.filter_by(
+                period_id=active_period.id,
+                day_of_week=weekday
+            ).first()
+            
+            if day_schedule:
+                logger.info(f"Usando horario de la base de datos: {day_schedule.check_in_time} - {day_schedule.check_out_time}")
+                return day_schedule.check_in_time, day_schedule.check_out_time
+    
+    # Usar horario por defecto si no hay configuración en la base de datos
+    default_times = ("09:00", "18:00") if weekday < 4 else ("08:00", "15:00")
+    logger.info(f"Usando horario por defecto: {default_times[0]} - {default_times[1]}")
+    return default_times
 
 def perform_check(check_type):
     """
@@ -86,10 +116,10 @@ def perform_check_out():
     """Realiza el proceso de fichaje de salida."""
     perform_check("salida")
 
-def main():
+def run_checker():
     """Función principal que configura y ejecuta los trabajos programados."""
     logger.info("Iniciando el servicio de fichaje automático...")
-    telegram_client.send_message("🚀 Iniciando el servicio de fichaje automático...")
+    telegram_client.send_message("🚀 Iniciando el servicio de fichaje automático (usando configuración de base de datos)...")
 
     # Programar tareas con horarios dinámicos
     schedule.every().minute.do(lambda: schedule_check())
@@ -118,5 +148,31 @@ def schedule_check():
     elif current_time == check_out_time:
         perform_check_out()
 
+def main():
+    """Run both the checker and web services"""
+    # Start the checker in a background thread
+    checker_thread = threading.Thread(target=run_checker)
+    checker_thread.daemon = True
+    checker_thread.start()
+    
+    # Run the web application in the main thread
+    app.run(
+        host='0.0.0.0',
+        port=int(os.environ.get('PORT', 5000)),
+        debug=False
+    )
+
 if __name__ == "__main__":
-    main() 
+    if os.environ.get('RUN_MODE') == 'web_only':
+        # Run just the web application
+        app.run(
+            host='0.0.0.0',
+            port=int(os.environ.get('PORT', 5000)),
+            debug=os.environ.get('FLASK_ENV') == 'development'
+        )
+    elif os.environ.get('RUN_MODE') == 'checker_only':
+        # Run just the checker service
+        run_checker()
+    else:
+        # Run both services
+        main() 

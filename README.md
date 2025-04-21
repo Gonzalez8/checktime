@@ -1,102 +1,98 @@
-# CheckTime - Bot de Fichaje Automático
+# CheckTime
 
-Bot de Telegram para automatizar el proceso de fichaje en CheckTime.
+Una aplicación para automatizar el fichaje de entrada y salida en el sistema CheckJC.
 
 ## Características
 
-- 🤖 Bot de Telegram para control y monitoreo
-- ⏰ Fichaje automático programado
-- 📊 Registro de actividad y logs
-- 🔄 Reintentos automáticos en caso de fallo
-- 🚀 Ejecución en contenedores Docker
+- Automatización del fichaje de entrada y salida en días laborables
+- Detección automática de fines de semana y días festivos
+- Integración con Telegram para recibir notificaciones
+- **Nuevo**: Interfaz web para configurar horarios y días festivos
+
+## Interfaz Web
+
+La nueva interfaz web permite:
+
+- Gestionar días festivos
+- Configurar diferentes periodos de horarios (ej. horario de verano, horario de invierno)
+- Establecer horarios de fichaje diferentes para cada día de la semana
+- Ver un resumen de la configuración actual
 
 ## Requisitos
 
-- Python 3.8 o superior
-- Docker y Docker Compose
-- Google Chrome (instalado automáticamente en el contenedor)
-- Cuenta de Telegram y token de bot
-- Credenciales de CheckTime
+- Python 3.8+
+- Google Chrome
+- ChromeDriver (compatible con la versión de Chrome instalada)
+- Docker (opcional, recomendado para despliegue)
 
 ## Configuración
 
-1. Clonar el repositorio:
-```bash
-git clone https://github.com/tu-usuario/checktime.git
-cd checktime
-```
+1. Copia el archivo `.env.example` a `.env` y configura las variables de entorno:
+   ```
+   cp .env.example .env
+   ```
 
-2. Crear archivo `.env` con las siguientes variables:
-```env
-TELEGRAM_BOT_TOKEN=tu_token_de_telegram
-TELEGRAM_CHAT_ID=tu_chat_id
-CHECKTIME_USERNAME=tu_usuario
-CHECKTIME_PASSWORD=tu_contraseña
-```
+2. Edita el archivo `.env` con tus credenciales y configuración:
+   ```
+   # Credenciales
+   CHECKJC_USERNAME=tu_usuario
+   CHECKJC_PASSWORD=tu_contraseña
+   
+   # Telegram (opcional)
+   TELEGRAM_BOT_TOKEN=tu_token
+   TELEGRAM_CHAT_ID=tu_chat_id
+   
+   # Configuración Web
+   FLASK_SECRET_KEY=clave_secreta_para_flask
+   ADMIN_PASSWORD=contraseña_administrador
+   ```
 
-3. Construir y ejecutar con Docker Compose:
-```bash
-docker compose up -d
-```
+## Instalación
 
-## Estructura del Proyecto
+### Con Docker (recomendado)
 
-```
-checktime/
-├── src/
-│   └── checktime/
-│       ├── bot/
-│       │   ├── __init__.py
-│       │   ├── listener.py
-│       │   └── telegram_bot.py
-│       ├── __init__.py
-│       └── main.py
-├── Dockerfile
-├── docker-compose.yml
-├── requirements.txt
-├── setup.py
-└── README.md
-```
+1. Construye y ejecuta los contenedores:
+   ```
+   docker-compose up -d
+   ```
 
-## Servicios Docker
+2. Accede a la interfaz web en: http://localhost:5000
 
-El proyecto utiliza dos contenedores Docker:
+### Sin Docker
 
-1. **checktime-bot**: Ejecuta el bot de Telegram
-   - Comando: `python -m src.checktime.bot.listener`
-   - Reinicio automático en caso de fallo
-   - Memoria compartida: 2GB
+1. Crea un entorno virtual e instala las dependencias:
+   ```
+   python -m venv venv
+   source venv/bin/activate  # En Windows: venv\Scripts\activate
+   pip install -r requirements.txt
+   pip install -e .
+   ```
 
-2. **checktime-fichar**: Ejecuta el servicio de fichaje
-   - Comando: `python -m src.checktime.main`
-   - Reinicio automático en caso de fallo
-   - Memoria compartida: 2GB
+2. Ejecuta la aplicación:
+   ```
+   python -m src.checktime.main
+   ```
 
-## Monitoreo
+3. Accede a la interfaz web en: http://localhost:5000
 
-- Los logs se almacenan en `/var/log/checktime/`
-- El bot envía notificaciones de estado a Telegram
-- Los contenedores se reinician automáticamente en caso de fallo
+## Modos de ejecución
 
-## Desarrollo
+Puedes configurar el modo de ejecución utilizando la variable `RUN_MODE` en el archivo `.env`:
 
-Para desarrollo local:
+- `RUN_MODE=web_only`: Ejecuta solo la interfaz web
+- `RUN_MODE=checker_only`: Ejecuta solo el servicio de fichaje automático
+- Sin valor: Ejecuta ambos servicios (interfaz web y fichaje automático)
 
-1. Instalar dependencias:
-```bash
-pip install -e .
-```
+## Uso de la interfaz web
 
-2. Ejecutar el bot:
-```bash
-python -m src.checktime.bot.listener
-```
-
-3. Ejecutar el servicio de fichaje:
-```bash
-python -m src.checktime.main
-```
+1. Accede a http://localhost:5000
+2. Inicia sesión con el usuario `admin` y la contraseña configurada en `ADMIN_PASSWORD`
+3. Desde el panel de control podrás:
+   - Ver resumen de la configuración actual
+   - Gestionar días festivos
+   - Configurar periodos de horarios
+   - Establecer horarios de fichaje por día de la semana
 
 ## Licencia
 
-Este proyecto está bajo la Licencia MIT. Ver el archivo `LICENSE` para más detalles. 
+Este proyecto está licenciado bajo la licencia MIT. 
