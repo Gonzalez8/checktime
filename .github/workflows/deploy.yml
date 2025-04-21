@@ -14,6 +14,11 @@ jobs:
         host: ${{ secrets.SERVER_HOST }}
         username: ${{ secrets.SERVER_USER }}
         key: ${{ secrets.SSH_PRIVATE_KEY }}
+        port: 22
+        timeout: 60s
+        command_timeout: 20m
+        proxy_port: 22
+        proxy_timeout: 60s
         script: |
           cd ~/apps/CheckTime
           git pull origin main
