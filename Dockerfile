@@ -61,3 +61,6 @@ EXPOSE 5000
 
 # Comando por defecto
 CMD ["python", "-m", "src.checktime.main"]
+
+# Ejecutar Supervisor
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
