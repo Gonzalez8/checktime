@@ -1,78 +1,31 @@
-version: '3'
+cat docker-compose.yml
+version: '3.8' # O una versión reciente que soporte las características usadas
 
 services:
-  db:
-    image: alpine:latest
-    container_name: checktime-db
-    volumes:
-      - ./db:/data
-    command: sh -c "mkdir -p /data && chmod 777 /data && touch /data/checktime.db && chmod 666 /data/checktime.db && tail -f /dev/null"
-    restart: unless-stopped
-
-  web:
-    build: .
-    container_name: checktime-web
-    depends_on:
-      - db
-    environment:
-      - CHECKJC_USERNAME=${CHECKJC_USERNAME}
-      - CHECKJC_PASSWORD=${CHECKJC_PASSWORD}
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
-      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
-      - DATABASE_URL=sqlite:////data/checktime.db
-      - PORT=5000
-      - PYTHONPATH=/app
-      - TZ=Europe/Madrid
-    volumes:
-      - ./config:/app/config
-      - ./logs:/app/logs
-      - ./db:/data
+  # --- Servicio Único de la Aplicación ---
+  app: # El único servicio que corre toda la aplicación
+    build:
+      context: . # Busca el Dockerfile en el directorio actual
+      # dockerfile: Dockerfile # Puedes especificar un nombre si no es 'Dockerfile'
+    container_name: checktime-app-unica # Nombre descriptivo para el contenedor único
+    restart: unless-stopped # Política de reinicio: siempre reiniciar a menos que se detenga manualmente
     ports:
+      # Mapea el puerto 5000 del host al puerto 5000 del contenedor (donde escucha Flask)
       - "5000:5000"
-    command: python -m src.checktime.web.server
-    restart: unless-stopped
-
-  bot:
-    build: .
-    container_name: checktime-bot
-    depends_on:
-      - db
     volumes:
-      - .:/app
-      - /var/log/checktime:/var/log/checktime
-      - ./db:/data
+      # Monta directorios/archivos locales dentro del contenedor para persistencia y configuración
+      # Es crucial que las rutas internas coincidan con lo que esperan tus scripts y supervisor
+      - ./db:/data          # Directorio local 'db' mapeado a '/data' dentro del contenedor (para SQLite)
+      - ./config:/app/config # Directorio local 'config' mapeado a '/app/config' (para configuración)
+      - ./logs:/app/logs     # Directorio local 'logs' mapeado a '/app/logs' (para logs)
+      # Nota: No se monta './:/app' para evitar sobreescribir el código copiado en la imagen
     env_file:
-      - .env
-    environment:
-      - PYTHONPATH=/app
-      - DATABASE_URL=sqlite:////data/checktime.db
-      - TZ=Europe/Madrid
-    working_dir: /app
-    command: python -m src.checktime.bot.listener
-    restart: unless-stopped
-    shm_size: '2gb'
-
-  fichar:
-    build: .
-    container_name: checktime-fichar
-    depends_on:
-      - db
-    volumes:
-      - .:/app
-      - /var/log/checktime:/var/log/checktime
-      - ./db:/data
-    env_file:
-      - .env
-    environment:
-      - PYTHONPATH=/app
-      - DATABASE_URL=sqlite:////data/checktime.db
-      - TZ=Europe/Madrid
-    command: python -m src.checktime.fichaje.service
-    restart: unless-stopped
-    shm_size: '2gb'
-
-volumes:
-  database:
-    driver: local 
+      - .env # Carga variables de entorno desde el archivo .env del directorio actual
+             # Asegúrate que este archivo .env define TODAS las variables necesarias, incluyendo:
+             # CHECKJC_USERNAME, CHECKJC_PASSWORD, TELEGRAM_BOT_TOKEN,
+             # TELEGRAM_CHAT_ID, FLASK_SECRET_KEY, ADMIN_PASSWORD,
+             # DATABASE_URL=sqlite:////data/checktime.db  <-- ¡Importante la ruta /data!
+             # PORT=5000
+             # TZ=Europe/Madrid
+             # PYTHONPATH=/app (Aunque esto también se puede definir en Dockerfile/supervisor)
+    shm_size: '2gb' # Asigna 2GB de memoria compartida
