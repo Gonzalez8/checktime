@@ -1,4 +1,3 @@
-cat docker-compose.yml
 version: '3.8' # O una versión reciente que soporte las características usadas
 
 services:
