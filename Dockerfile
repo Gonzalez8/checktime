@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-# Instalar dependencias del sistema
+# Instalar dependencias del sistema Y SUPERVISOR
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     gnupg \
@@ -23,6 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxfixes3 \
     libxrandr2 \
     xdg-utils \
+    supervisor `# <-- AÑADIDO: Instalar supervisor` \
     && rm -rf /var/lib/apt/lists/*
 
 # Instalar Google Chrome (última versión disponible)
@@ -54,13 +55,12 @@ ENV PYTHONPATH=/app
 # Crear directorios necesarios
 RUN mkdir -p /app/logs
 RUN mkdir -p /app/config
-RUN mkdir -p /app/db && chmod 777 /app/db
+
+# Copiar la configuración de Supervisor dentro de la imagen
+COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 # Exponer el puerto para la aplicación web
 EXPOSE 5000
 
-# Comando por defecto
-CMD ["python", "-m", "src.checktime.main"]
-
-# Ejecutar Supervisor
+# Ejecutar Supervisor (este es el proceso principal del contenedor)
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
