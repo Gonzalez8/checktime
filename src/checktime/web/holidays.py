@@ -16,8 +16,9 @@ try:
 except ImportError:
     HAS_ICALENDAR = False
 
-from checktime.web.models import db, Holiday
-from checktime.fichaje.holidays import HolidayManager
+from checktime.shared.models.holiday import Holiday
+from checktime.shared.repository import holiday_repository
+from checktime.shared.services.holiday_manager import HolidayManager
 from checktime.web.translations import get_translation
 
 holidays_bp = Blueprint('holidays', __name__, url_prefix='/holidays')
@@ -92,7 +93,7 @@ def flash_message(key, category='success'):
 @login_required
 def index():
     """List all holidays."""
-    holidays = Holiday.query.order_by(Holiday.date).all()
+    holidays = holiday_repository.get_all()
     return render_template('holidays/index.html', title='Holidays', holidays=holidays, icalendar_available=ICALENDAR_AVAILABLE)
 
 @holidays_bp.route('/add', methods=['GET', 'POST'])
@@ -102,15 +103,13 @@ def add():
     form = HolidayForm()
     if form.validate_on_submit():
         # Check if holiday already exists
-        existing = Holiday.query.filter_by(date=form.date.data).first()
+        existing = holiday_repository.get_by_date(form.date.data)
         if existing:
             flash_message('holiday_already_exists', 'danger')
             return redirect(url_for('holidays.index'))
         
         # Add to database
-        holiday = Holiday(date=form.date.data, description=form.description.data)
-        db.session.add(holiday)
-        db.session.commit()
+        holiday_repository.create(form.date.data, form.description.data)
         flash_message('holiday_added')
         return redirect(url_for('holidays.index'))
     
@@ -120,16 +119,18 @@ def add():
 @login_required
 def edit(id):
     """Edit an existing holiday."""
-    holiday = Holiday.query.get_or_404(id)
+    holiday = holiday_repository.get_by_id(id)
+    if not holiday:
+        flash_message('holiday_not_found', 'danger')
+        return redirect(url_for('holidays.index'))
+        
     form = HolidayForm(obj=holiday)
     # Update the submit button label to reflect an update operation
     lang = get_language()
     form.submit.label.text = get_translation('btn_update_holiday', lang)
     
     if form.validate_on_submit():
-        holiday.date = form.date.data
-        holiday.description = form.description.data
-        db.session.commit()
+        holiday_repository.update(holiday, date=form.date.data, description=form.description.data)
         flash_message('holiday_updated')
         return redirect(url_for('holidays.index'))
     
@@ -139,10 +140,12 @@ def edit(id):
 @login_required
 def delete(id):
     """Delete a holiday."""
-    holiday = Holiday.query.get_or_404(id)
-    db.session.delete(holiday)
-    db.session.commit()
-    
+    holiday = holiday_repository.get_by_id(id)
+    if not holiday:
+        flash_message('holiday_not_found', 'danger')
+        return redirect(url_for('holidays.index'))
+        
+    holiday_repository.delete(holiday)
     flash_message('holiday_deleted')
     return redirect(url_for('holidays.index'))
 
@@ -154,7 +157,7 @@ def sync():
     holiday_manager = HolidayManager()
     
     # Get all holidays from the database
-    holidays = Holiday.query.order_by(Holiday.date).all()
+    holidays = holiday_repository.get_all()
     
     # Clear existing holidays and add each one from the database
     holiday_manager.clear_holidays()
@@ -177,7 +180,8 @@ def add_range():
         description = form.description.data
         
         # Get existing holidays to avoid duplicates
-        existing_holidays = set(h.date for h in Holiday.query.all())
+        all_holidays = holiday_repository.get_all()
+        existing_holidays = set(h.date for h in all_holidays)
         
         # Calculate the date range
         current_date = start_date
@@ -199,22 +203,11 @@ def add_range():
                 continue
                 
             # Add new holiday
-            holiday = Holiday(date=current_date, description=description)
-            db.session.add(holiday)
+            holiday_repository.create(current_date, description)
             days_added += 1
             current_date += timedelta(days=1)
         
         if days_added > 0:
-            db.session.commit()
-            
-            # Sync the holiday manager - but don't clear existing holidays
-            holiday_manager = HolidayManager()
-            
-            # Only add the newly added holidays to the manager
-            for date in [h.date for h in Holiday.query.filter(Holiday.date >= start_date, Holiday.date <= end_date).all()]:
-                date_str = date.strftime('%Y-%m-%d')
-                holiday_manager.add_holiday(date_str, description=description)
-            
             # Get language for custom message construction
             lang = getattr(g, 'language', get_language())
             flash(f"{get_translation('holidays_added_success', lang)} {days_added} {get_translation('holidays', lang).lower()}. {get_translation('skipped', lang)} {weekends_skipped} {get_translation('weekends', lang).lower()} {get_translation('and', lang)} {existing_skipped} {get_translation('existing_holidays', lang).lower()}", 'success')
@@ -267,29 +260,16 @@ def import_ics():
                         summary = component.get('summary', get_translation('imported_holiday', lang))
                         
                         # Check if holiday already exists
-                        existing = Holiday.query.filter_by(date=event_date).first()
+                        existing = holiday_repository.get_by_date(event_date)
                         if existing:
                             duplicates += 1
                             continue
                         
                         # Add to database
-                        holiday = Holiday(date=event_date, description=str(summary))
-                        db.session.add(holiday)
+                        holiday_repository.create(event_date, str(summary))
                         events_added += 1
                 
                 if events_added > 0:
-                    db.session.commit()
-                    
-                    # Sync with holiday manager
-                    holiday_manager = HolidayManager()
-                    
-                    # Get all holidays from the database
-                    holidays = Holiday.query.all()
-                    for holiday in holidays:
-                        date_str = holiday.date.strftime('%Y-%m-%d')
-                        holiday_manager.add_holiday(date_str, description=holiday.description)
-                    
-                    lang = getattr(g, 'language', get_language())
                     flash(f"{get_translation('import_success', lang)} {events_added} {get_translation('holidays', lang).lower()}. {duplicates} {get_translation('duplicates_skipped', lang)}", 'success')
                     return redirect(url_for('holidays.index'))
                 else:
@@ -338,13 +318,12 @@ if ICALENDAR_AVAILABLE:
                         summary = str(component.get('summary', 'Imported Holiday'))
                         
                         # Check if holiday already exists
-                        existing = Holiday.query.filter_by(date=event_date).first()
+                        existing = holiday_repository.get_by_date(event_date)
                         if existing:
                             skipped_count += 1
                         else:
                             # Create new holiday
-                            holiday = Holiday(date=event_date, description=summary)
-                            db.session.add(holiday)
+                            holiday_repository.create(event_date, summary)
                             
                             # Add to holiday file
                             try:
@@ -355,7 +334,7 @@ if ICALENDAR_AVAILABLE:
                                 logging.error(f"Error adding holiday {date_str} to file: {str(e)}")
                 
                 # Commit all changes
-                db.session.commit()
+                holiday_repository.commit()
                 
                 # Flash message with results
                 lang = get_language()

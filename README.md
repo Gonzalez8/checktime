@@ -28,12 +28,13 @@ Edit daily schedules with an intuitive interface.
 
 ## Service Architecture
 
-CheckTime is organized into four independent services, each with a single responsibility:
+CheckTime is organized into three independent services, each with a single responsibility:
 
 1. **Web Service**: Provides the web user interface for system administration
-2. **Check-in Service**: Performs automatic clock-in/clock-out according to configured schedules
+2. **Scheduler Service**: Performs automatic clock-in/clock-out according to configured schedules
 3. **Bot Service**: Handles Telegram integration for notifications and commands
-4. **Database Service**: Manages persistent data storage (SQLite) for schedules, holidays, and configuration
+
+All services connect to a PostgreSQL database for persistent storage of schedules, holidays, and configuration.
 
 This separation ensures greater stability, maintainability, and scalability of the system.
 
@@ -45,9 +46,9 @@ The web interface provides an intuitive dashboard for administrators to:
 - Manage holidays (add individual days or date ranges)
 - Configure schedule periods (e.g., summer schedule, winter schedule)
 - Set check-in/check-out times for each day of the week
-- Synchronize holiday data between database and check-in service
+- Synchronize holiday data between database and scheduler service
 
-### Check-in Service
+### Scheduler Service
 This service handles the automation of clock-in/clock-out actions:
 - Runs according to the schedules configured in the web interface
 - Automatically detects and skips weekends and holidays
@@ -62,11 +63,12 @@ The Telegram bot provides remote management capabilities:
 - Provides status updates about the system
 - Allows administrators to add, remove, or list holidays remotely
 
-### Database Service
-Manages a SQLite database that stores:
+### Database
+Uses PostgreSQL to store:
 - Holiday information (date and description)
 - Schedule periods and their date ranges
 - Daily check-in/check-out times for each schedule period
+- User accounts and authentication data
 
 ## Telegram Commands
 
@@ -123,10 +125,10 @@ The following commands are available in the Telegram bot:
 
 3. To start specific services:
    ```
-   docker compose up -d web    # Just the web interface
-   docker compose up -d fichar # Just the check-in service
-   docker compose up -d bot    # Just the Telegram bot
-   docker compose up -d db     # Just the database
+   docker compose up -d web       # Just the web interface
+   docker compose up -d scheduler # Just the scheduler service
+   docker compose up -d bot       # Just the Telegram bot
+   docker compose up -d db        # Just the database
    ```
 
    Note: The database service automatically starts as a dependency when other services are started.
@@ -146,8 +148,8 @@ The following commands are available in the Telegram bot:
    # Web interface
    python -m src.checktime.web.server
    
-   # Check-in service
-   python -m src.checktime.fichaje.service
+   # Scheduler service
+   python -m src.checktime.scheduler.service
    
    # Telegram bot
    python -m src.checktime.bot.listener

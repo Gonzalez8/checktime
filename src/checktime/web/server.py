@@ -1,38 +1,38 @@
 #!/usr/bin/env python
 """
-Punto de entrada específico para la aplicación web.
-Este script solo inicia el servidor web Flask.
+Entry point for the web application.
+This script only starts the Flask web server.
 """
 
 import os
 import logging
 from pathlib import Path
 from checktime.web import create_app
-from checktime.config.settings import LOG_DIR
+from checktime.shared.config import get_port
 
-# Configurar logging
+# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(LOG_DIR / "web.log"),
+        logging.FileHandler("/var/log/checktime/web.log"),
         logging.StreamHandler()
     ]
 )
 logger = logging.getLogger(__name__)
 
 def main():
-    """Iniciar solo el servidor web."""
-    logger.info("Iniciando el servidor web...")
+    """Start only the web server."""
+    logger.info("Starting the web server...")
     
-    # Crear la aplicación Flask
+    # Create the Flask application
     app = create_app()
     
-    # Ejecutar la aplicación web
-    port = int(os.environ.get('PORT', 5000))
+    # Run the web application
+    port = get_port()
     debug = os.environ.get('FLASK_ENV') == 'development'
     
-    logger.info(f"Servidor web iniciado en el puerto {port}")
+    logger.info(f"Web server started on port {port}")
     app.run(host='0.0.0.0', port=port, debug=debug)
 
 if __name__ == "__main__":
