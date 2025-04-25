@@ -1,19 +1,21 @@
 import time
+from datetime import datetime
 from typing import Optional, Dict, Any
-from ..utils.logger import bot_logger, error_logger
-from ..utils.telegram import TelegramClient
-from ..fichaje.holidays import HolidayManager
+
+from checktime.utils.logger import bot_logger, error_logger
+from checktime.utils.telegram import TelegramClient
+from checktime.shared.services.holiday_manager import HolidayManager
 
 class TelegramBotListener:
-    """Cliente para escuchar y procesar comandos de Telegram."""
+    """Client for listening and processing Telegram commands."""
     
     def __init__(self, telegram_client: Optional[TelegramClient] = None, holiday_manager: Optional[HolidayManager] = None):
         """
-        Inicializa el listener de Telegram.
+        Initialize the Telegram listener.
         
         Args:
-            telegram_client (Optional[TelegramClient]): Cliente de Telegram
-            holiday_manager (Optional[HolidayManager]): Gestor de festivos
+            telegram_client (Optional[TelegramClient]): Telegram client
+            holiday_manager (Optional[HolidayManager]): Holiday manager
         """
         self.telegram = telegram_client or TelegramClient()
         self.holiday_manager = holiday_manager or HolidayManager()
@@ -21,19 +23,19 @@ class TelegramBotListener:
     
     def process_command(self, message: Dict[str, Any]) -> None:
         """
-        Procesa un comando recibido.
+        Process a received command.
         
         Args:
-            message (Dict[str, Any]): Mensaje recibido
+            message (Dict[str, Any]): Received message
         """
         chat_id = message["chat"]["id"]
         text = message.get("text", "").strip()
         
         if str(chat_id) != self.telegram.chat_id:
-            bot_logger.warning(f"Mensaje ignorado de chat no autorizado: {chat_id}")
+            bot_logger.warning(f"Message ignored from unauthorized chat: {chat_id}")
             return
         
-        bot_logger.info(f"Comando recibido: {text}")
+        bot_logger.info(f"Command received: {text}")
         
         if text.startswith("/addfestivo"):
             parts = text.split(None, 2)  # Split into command, date, and description (if present)
@@ -42,221 +44,140 @@ class TelegramBotListener:
                 description = parts[2] if len(parts) > 2 else None
                 self.add_holiday(date, description)
             else:
-                self.telegram.send_message("❌ Usa: `/addfestivo YYYY-MM-DD [descripción]`")
+                self.telegram.send_message("❌ Usage: `/addfestivo YYYY-MM-DD [description]`")
         
         elif text.startswith("/delfestivo"):
             parts = text.split()
             if len(parts) == 2:
                 self.remove_holiday(parts[1])
             else:
-                self.telegram.send_message("❌ Usa: `/delfestivo YYYY-MM-DD`")
+                self.telegram.send_message("❌ Usage: `/delfestivo YYYY-MM-DD`")
         
         elif text == "/listfestivos":
             self.list_holidays()
         
         else:
-            bot_logger.warning(f"Comando no reconocido: {text}")
-            self.telegram.send_message("❓ Comando no reconocido. Usa `/addfestivo`, `/delfestivo` o `/listfestivos`.")
+            bot_logger.warning(f"Command not recognized: {text}")
+            self.telegram.send_message("❓ Command not recognized. Use `/addfestivo`, `/delfestivo` or `/listfestivos`.")
     
     def add_holiday(self, date: str, description: Optional[str] = None) -> None:
         """
-        Añade un día festivo.
+        Add a holiday.
         
         Args:
-            date (str): Fecha en formato YYYY-MM-DD
-            description (Optional[str]): Descripción del festivo
+            date (str): Date in YYYY-MM-DD format
+            description (Optional[str]): Holiday description
         """
         try:
-            # Validar el formato de la fecha
-            from datetime import datetime
+            # Validate date format
             try:
                 date_obj = datetime.strptime(date, "%Y-%m-%d").date()
             except ValueError:
-                self.telegram.send_message("❌ Formato inválido. Usa: `/addfestivo YYYY-MM-DD [descripción]`")
+                self.telegram.send_message("❌ Invalid format. Use: `/addfestivo YYYY-MM-DD [description]`")
                 return
             
-            # Conectar a la base de datos
-            import sqlite3
-            import os
+            # Use the holiday manager to save
+            success = self.holiday_manager.save_holiday(date, description)
             
-            # Obtener la ruta de la base de datos
-            db_path = os.getenv('DATABASE_URL', 'sqlite:////data/checktime.db')
-            if db_path.startswith('sqlite:///'):
-                db_path = db_path[10:]  # Remove the sqlite:/// prefix
-            
-            if not os.path.exists(db_path):
-                self.telegram.send_message("❌ No se pudo encontrar la base de datos")
-                return
-            
-            # Insertar el festivo directamente con SQLite
-            conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
-            
-            # Comprobar si el festivo ya existe
-            cursor.execute("SELECT id FROM holiday WHERE date = ?", (date,))
-            if cursor.fetchone():
-                self.telegram.send_message(f"⚠️ El festivo {date} ya está registrado.")
-                conn.close()
-                return
-            
-            # Insertar el nuevo festivo
-            if description:
-                holiday_description = f"{description}"
+            if success:
+                self.telegram.send_message(f"✅ Holiday added: {date}")
             else:
-                holiday_description = f"Added via Telegram bot on {datetime.now()}"
-            
-            cursor.execute("INSERT INTO holiday (date, description, created_at) VALUES (?, ?, ?)", 
-                          (date, holiday_description, datetime.now()))
-            conn.commit()
-            conn.close()
-            
-            self.telegram.send_message(f"✅ Festivo añadido: {date}")
+                self.telegram.send_message(f"⚠️ Holiday {date} already exists.")
             
         except Exception as e:
-            error_msg = f"Error al añadir festivo: {e}"
+            error_msg = f"Error adding holiday: {e}"
             error_logger.error(error_msg)
             self.telegram.send_message(f"❌ {error_msg}")
     
     def remove_holiday(self, date: str) -> None:
         """
-        Elimina un día festivo.
+        Remove a holiday.
         
         Args:
-            date (str): Fecha en formato YYYY-MM-DD
+            date (str): Date in YYYY-MM-DD format
         """
         try:
-            # Validar el formato de la fecha
-            from datetime import datetime
+            # Validate date format
             try:
                 date_obj = datetime.strptime(date, "%Y-%m-%d").date()
             except ValueError:
-                self.telegram.send_message("❌ Formato inválido. Usa: `/delfestivo YYYY-MM-DD`")
+                self.telegram.send_message("❌ Invalid format. Use: `/delfestivo YYYY-MM-DD`")
                 return
             
-            # Conectar a la base de datos
-            import sqlite3
-            import os
+            # Use the holiday manager to delete
+            success = self.holiday_manager.delete_holiday(date)
             
-            # Obtener la ruta de la base de datos
-            db_path = os.getenv('DATABASE_URL', 'sqlite:////data/checktime.db')
-            if db_path.startswith('sqlite:///'):
-                db_path = db_path[10:]  # Remove the sqlite:/// prefix
-            
-            if not os.path.exists(db_path):
-                self.telegram.send_message("❌ No se pudo encontrar la base de datos")
-                return
-            
-            # Eliminar el festivo directamente con SQLite
-            conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
-            
-            # Comprobar si el festivo existe
-            cursor.execute("SELECT id FROM holiday WHERE date = ?", (date,))
-            if not cursor.fetchone():
-                self.telegram.send_message(f"⚠️ No existe el festivo {date}")
-                conn.close()
-                return
-            
-            # Eliminar el festivo
-            cursor.execute("DELETE FROM holiday WHERE date = ?", (date,))
-            conn.commit()
-            conn.close()
-            
-            self.telegram.send_message(f"✅ Festivo eliminado: {date}")
+            if success:
+                self.telegram.send_message(f"✅ Holiday removed: {date}")
+            else:
+                self.telegram.send_message(f"⚠️ Holiday {date} does not exist.")
             
         except Exception as e:
-            error_msg = f"Error al eliminar festivo: {e}"
+            error_msg = f"Error removing holiday: {e}"
             error_logger.error(error_msg)
             self.telegram.send_message(f"❌ {error_msg}")
     
     def list_holidays(self) -> None:
-        """Lista los próximos días festivos del año."""
+        """List upcoming holidays for the year."""
         try:
-            from datetime import datetime
-            import sqlite3
-            import os
-            
             current_date = datetime.now().date()
             current_year = current_date.year
             
-            # Use the configured database from environment
-            import os
-            db_path = os.getenv('DATABASE_URL', 'sqlite:////data/checktime.db')
-            if db_path.startswith('sqlite:///'):
-                db_path = db_path[10:]  # Remove the sqlite:/// prefix
-            
-            if not os.path.exists(db_path):
-                self.telegram.send_message("❌ No se pudo encontrar la base de datos")
-                return
-            
-            # Acceder directamente a SQLite
-            conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
-            
-            # Obtener todos los festivos
-            cursor.execute("SELECT date, description FROM holiday")
-            all_holidays = cursor.fetchall()
-            
-            if not all_holidays:
-                self.telegram.send_message("📅 No hay festivos guardados.")
-                conn.close()
-                return
-            
-            # Filtrar para mostrar solo los próximos festivos del año actual
-            upcoming_holidays = []
-            for date_str, desc in all_holidays:
-                holiday_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-                if holiday_date >= current_date and holiday_date.year == current_year:
-                    upcoming_holidays.append((date_str, desc))
+            # Use the holiday manager to get upcoming holidays
+            upcoming_holidays = self.holiday_manager.get_upcoming_holidays()
             
             if not upcoming_holidays:
-                self.telegram.send_message("📅 No hay festivos próximos para este año.")
-                conn.close()
+                self.telegram.send_message("📅 No upcoming holidays for this year.")
                 return
             
-            # Crear el mensaje
-            message = f"📅 *Próximos festivos del año {current_year}:*\n"
-            for date_str, desc in sorted(upcoming_holidays, key=lambda x: datetime.strptime(x[0], "%Y-%m-%d")):
-                holiday_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-                days_remaining = (holiday_date - current_date).days
-                day_text = "hoy" if days_remaining == 0 else f"en {days_remaining} día{'s' if days_remaining != 1 else ''}"
+            # Create the message
+            message = f"📅 *Upcoming holidays for {current_year}:*\n"
+            for date_str, desc, days_remaining in upcoming_holidays:
+                day_text = "today" if days_remaining == 0 else f"in {days_remaining} day{'s' if days_remaining != 1 else ''}"
                 message += f"- {date_str} ({desc}): {day_text}\n"
             
-            conn.close()
             self.telegram.send_message(message)
         except Exception as e:
-            error_msg = f"Error al listar festivos: {e}"
+            error_msg = f"Error listing holidays: {e}"
             error_logger.error(error_msg)
             self.telegram.send_message(f"❌ {error_msg}")
     
     def listen(self) -> None:
-        """Inicia el bucle de escucha de comandos."""
-        bot_logger.info("Iniciando bot de Telegram")
+        """Listen for and process Telegram commands."""
+        bot_logger.info("Starting Telegram bot listener")
+        self.telegram.send_message("🤖 Telegram bot listener started")
         
         while True:
             try:
-                updates = self.telegram.get_updates(
-                    offset=(self.last_update_id + 1) if self.last_update_id else None
-                )
+                updates = self.telegram.get_updates(offset=self.last_update_id)
                 
-                if "result" in updates:
-                    for update in updates["result"]:
-                        self.last_update_id = update["update_id"]
-                        
-                        if "message" in update:
-                            self.process_command(update["message"])
-            
+                for update in updates.get("result", []):
+                    # Update the last processed update ID
+                    update_id = update["update_id"]
+                    self.last_update_id = update_id + 1
+                    
+                    # Process the message if it contains a command
+                    if "message" in update and "text" in update["message"]:
+                        self.process_command(update["message"])
+                
+                # Small delay to prevent high CPU usage
+                time.sleep(1)
+                
             except Exception as e:
-                error_msg = f"Error en loop principal: {e}"
-                error_logger.error(error_msg, exc_info=True)
-                bot_logger.error(error_msg)
-            
-            time.sleep(5)
+                error_msg = f"Error in Telegram listener: {e}"
+                error_logger.error(error_msg)
+                time.sleep(60)  # Longer delay on error
 
 def main():
-    """Función principal para ejecutar el bot."""
-    listener = TelegramBotListener()
-    listener.listen()
+    """Main function that runs the Telegram bot."""
+    bot_logger.info("Starting Telegram bot")
+    
+    try:
+        listener = TelegramBotListener()
+        listener.listen()
+    except Exception as e:
+        error_msg = f"Fatal error in Telegram bot: {e}"
+        error_logger.error(error_msg)
 
 if __name__ == "__main__":
     main() 

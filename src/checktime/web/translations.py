@@ -35,6 +35,32 @@ EN = {
     'view_all': 'View All',
     'confirm_delete': 'Confirm Delete',
     
+    # Home page
+    'welcome': 'Welcome',
+    'app_description': 'Manage your work schedules and automate check-ins with ease',
+    'register': 'Register',
+    'register_now': 'Register Now',
+    'features': 'Features',
+    'schedule_management': 'Schedule Management',
+    'schedule_description': 'Create and manage your work schedules with our intuitive interface.',
+    'automated_checkins': 'Automated Check-ins',
+    'automation_description': 'Automate your check-ins and check-outs based on your schedule.',
+    'holiday_tracking': 'Holiday Tracking',
+    'holiday_description': 'Keep track of holidays and special dates to adjust your work schedule.',
+    'get_started_today': 'Get Started Today!',
+    'cta_description': 'Join CheckTime and simplify your work scheduling and time tracking.',
+    'already_have_account': 'Already have an account? Log in',
+    'confirm_password': 'Confirm Password',
+    'email': 'Email',
+    'enter_email': 'Enter your email address',
+    'enter_username': 'Enter your username',
+    'account_created': 'Account created successfully! You can now log in.',
+    'password_mismatch': 'Passwords do not match',
+    'username_taken': 'Username already taken',
+    'email_taken': 'Email already registered',
+    'invalid_username_or_password': 'Invalid username or password',
+    'username': 'Username',
+    
     # Dashboard
     'welcome_dashboard': 'Welcome to the CheckTime dashboard. Manage your automatic check-in/check-out configuration.',
     'calendar': 'Calendar',
@@ -100,7 +126,6 @@ EN = {
     'btn_update_period': 'Update Period',
     
     # Schedules
-    'schedule_management': 'Schedule Management',
     'schedule_periods': 'Schedule Periods',
     'add_period': 'Add Period',
     'edit_period': 'Edit Period',
@@ -145,11 +170,9 @@ EN = {
     'sunday': 'Sunday',
     
     # Authentication
-    'username': 'Username',
     'password': 'Password',
     'remember_me': 'Remember Me',
     'sign_in': 'Sign In',
-    'enter_username': 'Enter your username',
     'enter_password': 'Enter your password',
     
     # Footer
@@ -244,10 +267,36 @@ ES = {
     'inactive': 'Inactivo',
     'day': 'Día',
     'days': 'días',
-    'to': 'a',
+    'to': 'hasta',
     'current': 'Actual',
     'view_all': 'Ver Todos',
     'confirm_delete': 'Confirmar Eliminación',
+    
+    # Home page
+    'welcome': 'Bienvenido',
+    'app_description': 'Gestione su planificación laboral y automatice los check-ins con facilidad',
+    'register': 'Registrarse',
+    'register_now': 'Regístrate Ahora',
+    'features': 'Características',
+    'schedule_management': 'Gestión de Horarios',
+    'schedule_description': 'Cree y gestione sus horarios laborales con nuestra interfaz intuitiva.',
+    'automated_checkins': 'Check-ins Automatizados',
+    'automation_description': 'Automatice sus check-ins y check-outs basado en su horario.',
+    'holiday_tracking': 'Seguimiento de Festivos',
+    'holiday_description': 'Mantenga un seguimiento de festivos y fechas especiales para ajustar su horario laboral.',
+    'get_started_today': '¡Comience Hoy!',
+    'cta_description': 'Únase a CheckTime y simplifique su planificación laboral y seguimiento del tiempo.',
+    'already_have_account': '¿Ya tiene una cuenta? Iniciar Sesión',
+    'confirm_password': 'Confirmar Contraseña',
+    'email': 'Correo Electrónico',
+    'enter_email': 'Ingrese su dirección de correo electrónico',
+    'enter_username': 'Ingrese su nombre de usuario',
+    'account_created': '¡Cuenta creada exitosamente! Ahora puede iniciar sesión.',
+    'password_mismatch': 'Las contraseñas no coinciden',
+    'username_taken': 'Nombre de usuario ya tomado',
+    'email_taken': 'Correo electrónico ya registrado',
+    'invalid_username_or_password': 'Nombre de usuario o contraseña inválida',
+    'username': 'Usuario',
     
     # Dashboard
     'welcome_dashboard': 'Bienvenido al panel de control de CheckTime. Gestione su configuración automática de fichajes.',
@@ -314,7 +363,6 @@ ES = {
     'btn_update_period': 'Actualizar Período',
     
     # Schedules
-    'schedule_management': 'Gestión de Horarios',
     'schedule_periods': 'Períodos de Horario',
     'add_period': 'Añadir Período',
     'edit_period': 'Editar Período',
@@ -359,11 +407,9 @@ ES = {
     'sunday': 'Domingo',
     
     # Authentication
-    'username': 'Usuario',
     'password': 'Contraseña',
     'remember_me': 'Recordarme',
     'sign_in': 'Iniciar Sesión',
-    'enter_username': 'Introduce tu nombre de usuario',
     'enter_password': 'Introduce tu contraseña',
     
     # Footer

@@ -1,12 +1,13 @@
 from flask import Blueprint, render_template, request, jsonify, g
 from flask_login import login_required, current_user
 
-from checktime.web.models import Holiday, SchedulePeriod, DaySchedule
+from checktime.shared.models import Holiday, SchedulePeriod, DaySchedule
+from checktime.shared.repository import holiday_repository, schedule_period_repository, day_schedule_repository
 from datetime import datetime, timedelta, date
 import calendar
 from checktime.web.translations import get_translation
 
-dashboard_bp = Blueprint('dashboard', __name__)
+dashboard_bp = Blueprint('dashboard', __name__, url_prefix='/dashboard')
 
 @dashboard_bp.route('/')
 @dashboard_bp.route('/calendar/<int:year>/<int:month>')
@@ -45,25 +46,20 @@ def index(year=None, month=None):
         next_year = year
     
     # Get holidays
-    upcoming_holidays = Holiday.query.filter(Holiday.date >= today).order_by(Holiday.date).limit(5).all()
+    upcoming_holidays = holiday_repository.get_upcoming_holidays(today, 5)
     
     # Get active schedule periods
-    active_periods = SchedulePeriod.query.filter(
-        SchedulePeriod.is_active == True,
-        SchedulePeriod.end_date >= today
-    ).order_by(SchedulePeriod.start_date).all()
+    active_periods = schedule_period_repository.get_active_periods_after_date(today)
     
     # Get current schedule
-    current_schedule = None
-    for period in active_periods:
-        if period.start_date <= today <= period.end_date:
-            current_schedule = period
-            break
+    current_schedule = next((period for period in active_periods 
+                      if period.start_date <= today <= period.end_date), None)
     
     # Get day schedules if current schedule exists
     day_schedules = []
     if current_schedule:
-        day_schedules = sorted(current_schedule.schedules, key=lambda x: x.day_of_week)
+        day_schedules = sorted(day_schedule_repository.get_all_by_period(current_schedule.id), 
+                              key=lambda x: x.day_of_week)
     
     # Weekly stats: number of working days
     # Calculate start and end of current week
@@ -74,15 +70,14 @@ def index(year=None, month=None):
     days_this_week = 0
     
     # Get holidays for this week
-    week_holidays = Holiday.query.filter(
-        Holiday.date >= start_of_week,
-        Holiday.date <= end_of_week
-    ).all()
+    week_holidays = holiday_repository.get_holidays_for_date_range(start_of_week, end_of_week)
     holiday_dates = [h.date for h in week_holidays]
     
     # Count working days (weekdays with schedule that are not holidays)
     if current_schedule:
-        scheduled_days = [day.day_of_week for day in current_schedule.schedules]
+        # Get all days with schedules for this period
+        day_schedules_dict = day_schedule_repository.get_all_by_period(current_schedule.id)
+        scheduled_days = [day.day_of_week for day in day_schedules_dict]
         
         for i in range(7):
             check_date = start_of_week + timedelta(days=i)
@@ -103,11 +98,7 @@ def index(year=None, month=None):
                 days_this_week += 1
     
     # Get all active periods that overlap with the selected month for the calendar
-    calendar_active_periods = SchedulePeriod.query.filter(
-        SchedulePeriod.is_active == True,
-        SchedulePeriod.start_date <= last_day_of_month,
-        SchedulePeriod.end_date >= current_date
-    ).order_by(SchedulePeriod.start_date).all()
+    calendar_active_periods = schedule_period_repository.get_periods_for_date_range(current_date, last_day_of_month)
     
     # Generate calendar data for the selected month
     calendar_data = generate_calendar_data(year, month, calendar_active_periods)
@@ -168,18 +159,11 @@ def calendar_partial(year, month):
         next_year = year
     
     # Get all active schedule periods that overlap with the selected month
-    active_periods = SchedulePeriod.query.filter(
-        SchedulePeriod.is_active == True,
-        SchedulePeriod.start_date <= last_day_of_month,
-        SchedulePeriod.end_date >= current_date
-    ).order_by(SchedulePeriod.start_date).all()
+    active_periods = schedule_period_repository.get_periods_for_date_range(current_date, last_day_of_month)
     
     # Find the current schedule (for today)
-    current_schedule = None
-    for period in active_periods:
-        if period.start_date <= today <= period.end_date:
-            current_schedule = period
-            break
+    current_schedule = next((period for period in schedule_period_repository.get_active_periods() 
+                      if period.start_date <= today <= period.end_date), None)
     
     # Generate calendar data for all active periods that overlap with this month
     calendar_data = generate_calendar_data(year, month, active_periods)
@@ -215,10 +199,7 @@ def generate_calendar_data(year, month, active_periods):
     start_date = first_day
     end_date = date(year, month, num_days)
     
-    holidays = Holiday.query.filter(
-        Holiday.date >= start_date,
-        Holiday.date <= end_date
-    ).all()
+    holidays = holiday_repository.get_holidays_for_date_range(start_date, end_date)
     
     # Create a dictionary of holidays for quick lookup
     holiday_dict = {h.date: h for h in holidays}
@@ -230,10 +211,11 @@ def generate_calendar_data(year, month, active_periods):
     for period in active_periods:
         # Check if this month overlaps with the schedule period
         if not (end_date < period.start_date or start_date > period.end_date):
+            # Get all day schedules for this period
+            day_schedules = day_schedule_repository.get_all_by_period(period.id)
+            
             # Build a dictionary of daily schedules for this period
-            schedule_dict = {}
-            for day_schedule in period.schedules:
-                schedule_dict[day_schedule.day_of_week] = day_schedule
+            schedule_dict = {day_schedule.day_of_week: day_schedule for day_schedule in day_schedules}
             
             # For each day in the month
             for day in range(1, num_days + 1):

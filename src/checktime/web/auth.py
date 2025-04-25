@@ -1,12 +1,19 @@
-from flask import Blueprint, render_template, redirect, url_for, flash, request
+from flask import Blueprint, render_template, redirect, url_for, flash, request, session
 from flask_login import login_user, logout_user, login_required, current_user
 from flask_wtf import FlaskForm
 from wtforms import StringField, PasswordField, BooleanField, SubmitField
-from wtforms.validators import DataRequired, Email, ValidationError
+from wtforms.validators import DataRequired, Email, EqualTo, ValidationError
 
-from checktime.web.models import db, User
+from checktime.shared.models.user import User
+from checktime.shared.repository import user_repository
+from checktime.shared.config import get_admin_password
+from checktime.web.translations import get_translation
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
+
+def get_language():
+    """Get the current language from session or default to 'en'"""
+    return session.get('lang', 'en')
 
 class LoginForm(FlaskForm):
     username = StringField('Username', validators=[DataRequired()])
@@ -18,17 +25,20 @@ class RegistrationForm(FlaskForm):
     username = StringField('Username', validators=[DataRequired()])
     email = StringField('Email', validators=[DataRequired(), Email()])
     password = PasswordField('Password', validators=[DataRequired()])
+    password2 = PasswordField('Repeat Password', validators=[DataRequired(), EqualTo('password')])
     submit = SubmitField('Register')
     
     def validate_username(self, username):
-        user = User.query.filter_by(username=username.data).first()
+        user = user_repository.get_by_username(username.data)
         if user is not None:
-            raise ValidationError('Please use a different username.')
+            lang = get_language()
+            raise ValidationError(get_translation('username_taken', lang))
     
     def validate_email(self, email):
-        user = User.query.filter_by(email=email.data).first()
+        user = user_repository.get_by_email(email.data)
         if user is not None:
-            raise ValidationError('Please use a different email address.')
+            lang = get_language()
+            raise ValidationError(get_translation('email_taken', lang))
 
 @auth_bp.route('/login', methods=['GET', 'POST'])
 def login():
@@ -37,9 +47,9 @@ def login():
     
     form = LoginForm()
     if form.validate_on_submit():
-        user = User.query.filter_by(username=form.username.data).first()
+        user = user_repository.get_by_username(form.username.data)
         if user is None or not user.check_password(form.password.data):
-            flash('Invalid username or password')
+            flash(get_translation('invalid_username_or_password', get_language()), 'danger')
             return redirect(url_for('auth.login'))
         
         login_user(user, remember=form.remember_me.data)
@@ -57,16 +67,17 @@ def logout():
 
 @auth_bp.route('/register', methods=['GET', 'POST'])
 def register():
-    if current_user.is_authenticated and not current_user.is_admin:
+    if current_user.is_authenticated:
         return redirect(url_for('dashboard.index'))
     
     form = RegistrationForm()
     if form.validate_on_submit():
-        user = User(username=form.username.data, email=form.email.data)
-        user.set_password(form.password.data)
-        db.session.add(user)
-        db.session.commit()
-        flash('Congratulations, you are now a registered user!')
+        user_repository.create_user(
+            username=form.username.data,
+            email=form.email.data,
+            password=form.password.data
+        )
+        flash(get_translation('account_created', get_language()), 'success')
         return redirect(url_for('auth.login'))
     
     return render_template('auth/register.html', title='Register', form=form) 

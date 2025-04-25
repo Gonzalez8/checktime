@@ -16,7 +16,7 @@ setup(
     python_requires=">=3.8",
     entry_points={
         "console_scripts": [
-            "checktime-fichar=checktime.fichaje.service:main",
+            "checktime-scheduler=checktime.scheduler.service:main",
             "checktime-bot=checktime.bot.listener:main",
             "checktime-web=checktime.web.server:main",
         ],

@@ -1,7 +1,11 @@
 import os
-from flask import Flask, request, session, redirect, url_for, g
-from flask_login import LoginManager
-from checktime.web.models import db, User
+from flask import Flask, request, session, redirect, url_for, g, render_template
+from flask_login import LoginManager, current_user
+
+from checktime.shared.db import db, init_db
+from checktime.shared.config import get_secret_key, get_database_url, get_admin_password
+from checktime.shared.models.user import User
+from checktime.shared.repository import user_repository
 from checktime.web.translations import t
 
 login_manager = LoginManager()
@@ -17,8 +21,8 @@ def create_app(test_config=None):
     
     # Default configuration
     app.config.from_mapping(
-        SECRET_KEY=os.getenv('FLASK_SECRET_KEY', 'dev'),
-        SQLALCHEMY_DATABASE_URI=os.getenv('DATABASE_URL', 'sqlite:////data/checktime.db'),
+        SECRET_KEY=get_secret_key(),
+        SQLALCHEMY_DATABASE_URI=get_database_url(),
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
         # Babel configuration
         LANGUAGES = ['en', 'es'],
@@ -30,7 +34,7 @@ def create_app(test_config=None):
         app.config.update(test_config)
     
     # Initialize extensions
-    db.init_app(app)
+    init_db(app)
     login_manager.init_app(app)
     
     # Create database tables
@@ -38,11 +42,13 @@ def create_app(test_config=None):
         db.create_all()
         
         # Create admin user if it doesn't exist
-        if User.query.filter_by(username='admin').first() is None:
-            admin = User(username='admin', email='admin@example.com', is_admin=True)
-            admin.set_password(os.getenv('ADMIN_PASSWORD', 'admin'))
-            db.session.add(admin)
-            db.session.commit()
+        if not user_repository.get_by_username('admin'):
+            user_repository.create_user(
+                username='admin',
+                email='admin@example.com',
+                password=get_admin_password(),
+                is_admin=True
+            )
     
     # Register blueprints
     from checktime.web.auth import auth_bp
@@ -57,10 +63,17 @@ def create_app(test_config=None):
     
     @login_manager.user_loader
     def load_user(user_id):
-        return User.query.get(int(user_id))
+        return user_repository.get_by_id(int(user_id))
     
     # Configure login view
     login_manager.login_view = 'auth.login'
+    
+    # Root route for homepage
+    @app.route('/')
+    def home():
+        if current_user.is_authenticated:
+            return redirect(url_for('dashboard.index'))
+        return render_template('home.html')
     
     # Language selector route
     @app.route('/language/<lang_code>')
@@ -68,7 +81,7 @@ def create_app(test_config=None):
         # Store language preference in session
         session['language'] = lang_code if lang_code in app.config['LANGUAGES'] else app.config['BABEL_DEFAULT_LOCALE']
         # Redirect back to the previous page or home
-        return redirect(request.referrer or url_for('dashboard.index'))
+        return redirect(request.referrer or url_for('home'))
     
     @app.before_request
     def before_request():
@@ -84,9 +97,13 @@ def create_app(test_config=None):
     # Add template context processor for translations
     @app.context_processor
     def inject_translations():
-        def translate(key):
+        def translate(key, default=None):
             # Use the language from the flask g object (set in before_request)
-            return t(key, g.language)
+            translation = t(key, g.language)
+            # If translation is the same as key and a default is provided, use default
+            if translation == key and default is not None:
+                return default
+            return translation
         
         # Make translate function and languages available in all templates
         return dict(
