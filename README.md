@@ -162,8 +162,8 @@ The following commands are available in the Telegram bot:
    ADMIN_PASSWORD=admin_password
    
    # Telegram Bot (for global alerts and the bot service)
-   TELEGRAM_BOT_TOKEN=your_token
-   TELEGRAM_CHAT_ID=default_chat_id  # For system notifications
+   TELEGRAM_BOT_TOKEN=your_token #Used for send notifications to the users
+   TELEGRAM_CHAT_ID=default_chat_id  # For system notifications and used for admin user
    
    # Web Configuration
    FLASK_SECRET_KEY=flask_secret_key

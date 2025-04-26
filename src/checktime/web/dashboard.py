@@ -51,7 +51,7 @@ def index(year=None, month=None):
     schedule_manager = ScheduleManager(current_user.id)
     
     # Get holidays - now directly using Holiday objects with days_remaining attribute
-    upcoming_holidays = holiday_manager.get_upcoming_holidays()
+    upcoming_holidays = holiday_manager.get_upcoming_holidays()[:5]
     
     # Get active schedule periods
     active_periods = schedule_manager.get_active_periods_after_date(today)
