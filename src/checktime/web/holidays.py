@@ -18,7 +18,6 @@ except ImportError:
     HAS_ICALENDAR = False
 
 from checktime.shared.models.holiday import Holiday
-from checktime.shared.repository import holiday_repository
 from checktime.shared.services.holiday_manager import HolidayManager
 from checktime.web.translations import get_translation
 
@@ -93,7 +92,8 @@ def flash_message(key, category='success'):
 @login_required
 def index():
     """List all holidays."""
-    holidays = holiday_repository.get_all(current_user.id)
+    holiday_manager = HolidayManager(current_user.id)
+    holidays = holiday_manager.get_all_holidays()
     return render_template('holidays/index.html', title='Holidays', holidays=holidays, icalendar_available=ICALENDAR_AVAILABLE)
 
 @holidays_bp.route('/add', methods=['GET', 'POST'])
@@ -102,21 +102,23 @@ def add():
     """Add a new holiday."""
     form = HolidayForm()
     if form.validate_on_submit():
-        # Check if holiday already exists for this date and user
-        existing_holiday = holiday_repository.get_by_date(form.date.data, current_user.id)
-        if existing_holiday:
-            flash_message('holiday_already_exists', 'danger')
-            return redirect(url_for('holidays.add'))
+        holiday_manager = HolidayManager(current_user.id)
         
-        # Create new holiday
-        holiday_repository.create(
-            date=form.date.data,
+        # Convert date to string format for the manager
+        date_str = form.date.data.strftime('%Y-%m-%d')
+        
+        # Try to add the holiday
+        success = holiday_manager.add_holiday(
+            date=date_str,
             description=form.description.data,
             user_id=current_user.id
         )
         
-        flash_message('holiday_added')
-        return redirect(url_for('holidays.index'))
+        if success:
+            flash_message('holiday_added')
+            return redirect(url_for('holidays.index'))
+        else:
+            flash_message('holiday_already_exists', 'danger')
     
     return render_template('holidays/add.html', title='Add Holiday', form=form)
 
@@ -124,28 +126,28 @@ def add():
 @login_required
 def edit(id):
     """Edit an existing holiday."""
-    holiday = holiday_repository.get_by_id(id, current_user.id)
+    holiday_manager = HolidayManager(current_user.id)
+    
+    # Get the holiday by ID
+    holiday = holiday_manager.get_holiday_by_id(id)
     if not holiday:
         flash_message('holiday_not_found', 'danger')
         return redirect(url_for('holidays.index'))
         
     form = HolidayForm(obj=holiday)
     if form.validate_on_submit():
-        # Check if the new date would conflict with an existing holiday
-        existing_holiday = holiday_repository.get_by_date(form.date.data, current_user.id)
-        if existing_holiday and existing_holiday.id != id:
-            flash_message('holiday_already_exists', 'danger')
-            return redirect(url_for('holidays.edit', id=id))
-        
-        # Update holiday
-        holiday_repository.update(
-            holiday=holiday,
+        # Update the holiday through the manager
+        success = holiday_manager.update_holiday(
+            holiday_id=id,
             date=form.date.data,
             description=form.description.data
         )
         
-        flash_message('holiday_updated')
-        return redirect(url_for('holidays.index'))
+        if success:
+            flash_message('holiday_updated')
+            return redirect(url_for('holidays.index'))
+        else:
+            flash_message('holiday_already_exists', 'danger')
     
     return render_template('holidays/edit.html', title='Edit Holiday', form=form, holiday=holiday)
 
@@ -153,13 +155,16 @@ def edit(id):
 @login_required
 def delete(id):
     """Delete a holiday."""
-    holiday = holiday_repository.get_by_id(id, current_user.id)
-    if not holiday:
-        flash_message('holiday_not_found', 'danger')
-        return redirect(url_for('holidays.index'))
+    holiday_manager = HolidayManager(current_user.id)
     
-    holiday_repository.delete(holiday)
-    flash_message('holiday_deleted')
+    # Delete the holiday through the manager
+    success = holiday_manager.delete_holiday_by_id(id)
+    
+    if success:
+        flash_message('holiday_deleted')
+    else:
+        flash_message('holiday_not_found', 'danger')
+    
     return redirect(url_for('holidays.index'))
 
 @holidays_bp.route('/sync')
@@ -169,16 +174,8 @@ def sync():
     # Create a holiday manager instance
     holiday_manager = HolidayManager(current_user.id)
     
-    # Get all holidays from the database
-    holidays = holiday_repository.get_all(current_user.id)
-    
-    # Clear existing holidays and add each one from the database
-    holiday_manager.clear_holidays()
-    
-    # Add each holiday from the database to the holiday manager
-    for holiday in holidays:
-        date_str = holiday.date.strftime('%Y-%m-%d')
-        holiday_manager.add_holiday(date_str, description=holiday.description, user_id=current_user.id)
+    # Trigger a reload of holidays
+    holiday_manager.reload_holidays()
     
     flash_message('holidays_synced')
     return redirect(url_for('holidays.index'))
@@ -192,38 +189,20 @@ def add_range():
         end_date = form.end_date.data
         description = form.description.data
         
-        # Get existing holidays to avoid duplicates
-        all_holidays = holiday_repository.get_all(current_user.id)
-        existing_holidays = set(h.date for h in all_holidays)
+        holiday_manager = HolidayManager(current_user.id)
         
-        # Calculate the date range
-        current_date = start_date
-        days_added = 0
-        weekends_skipped = 0
-        existing_skipped = 0
+        # Add range of holidays through the manager
+        result = holiday_manager.add_holiday_range(
+            start_date=start_date,
+            end_date=end_date,
+            description=description,
+            skip_weekends=True
+        )
         
-        while current_date <= end_date:
-            # Skip weekends (0 = Monday, 6 = Sunday in isoweekday)
-            if current_date.isoweekday() in [6, 7]:  # Saturday and Sunday
-                weekends_skipped += 1
-                current_date += timedelta(days=1)
-                continue
-                
-            # Skip existing holidays
-            if current_date in existing_holidays:
-                existing_skipped += 1
-                current_date += timedelta(days=1)
-                continue
-                
-            # Add new holiday
-            holiday_repository.create(current_date, description, current_user.id)
-            days_added += 1
-            current_date += timedelta(days=1)
-        
-        if days_added > 0:
+        if result['added'] > 0:
             # Get language for custom message construction
             lang = getattr(g, 'language', get_language())
-            flash(f"{get_translation('holidays_added_success', lang)} {days_added} {get_translation('holidays', lang).lower()}. {get_translation('skipped', lang)} {weekends_skipped} {get_translation('weekends', lang).lower()} {get_translation('and', lang)} {existing_skipped} {get_translation('existing_holidays', lang).lower()}", 'success')
+            flash(f"{get_translation('holidays_added_success', lang)} {result['added']} {get_translation('holidays', lang).lower()}. {get_translation('skipped', lang)} {result['weekends_skipped']} {get_translation('weekends', lang).lower()} {get_translation('and', lang)} {result['existing_skipped']} {get_translation('existing_holidays', lang).lower()}", 'success')
             return redirect(url_for('holidays.index'))
         else:
             flash_message('no_holidays_added', 'warning')
@@ -252,42 +231,17 @@ def import_ics():
                 with os.fdopen(fd, 'wb') as tmp:
                     tmp.write(ics_file.read())
                 
-                # Parse the ICS file
-                with open(temp_path, 'rb') as f:
-                    cal = Calendar.from_ical(f.read())
+                # Import the ICS file using the holiday manager
+                holiday_manager = HolidayManager(current_user.id)
+                result = holiday_manager.import_ics_file(temp_path)
                 
-                # Process events
-                events_added = 0
-                duplicates = 0
-                
-                for component in cal.walk():
-                    if component.name == "VEVENT":
-                        event_date = component.get('dtstart').dt
-                        
-                        # If event_date is a datetime (not just a date), convert to date
-                        if isinstance(event_date, datetime):
-                            event_date = event_date.date()
-                        
-                        # Get event summary/description
-                        lang = getattr(g, 'language', get_language())
-                        summary = component.get('summary', get_translation('imported_holiday', lang))
-                        
-                        # Check if holiday already exists
-                        existing = holiday_repository.get_by_date(event_date, current_user.id)
-                        if existing:
-                            duplicates += 1
-                            continue
-                        
-                        # Add to database
-                        holiday_repository.create(event_date, str(summary), current_user.id)
-                        events_added += 1
-                
-                if events_added > 0:
-                    flash(f"{get_translation('import_success', lang)} {events_added} {get_translation('holidays', lang).lower()}. {duplicates} {get_translation('duplicates_skipped', lang)}", 'success')
+                # Show results
+                lang = getattr(g, 'language', get_language())
+                if result['added'] > 0:
+                    flash(f"{get_translation('import_success', lang)} {result['added']} {get_translation('holidays', lang).lower()}. {result['skipped']} {get_translation('duplicates_skipped', lang)}", 'success')
                     return redirect(url_for('holidays.index'))
                 else:
-                    lang = getattr(g, 'language', get_language())
-                    flash(f"{get_translation('no_holidays_imported', lang)} {duplicates} {get_translation('duplicates_found', lang)}", 'warning')
+                    flash(f"{get_translation('no_holidays_imported', lang)} {result['skipped']} {get_translation('duplicates_found', lang)}", 'warning')
                     
             except Exception as e:
                 lang = getattr(g, 'language', get_language())
@@ -313,48 +267,17 @@ if ICALENDAR_AVAILABLE:
         if form.validate_on_submit():
             try:
                 file_data = request.files['ics_file'].read()
-                cal = Calendar.from_ical(file_data)
                 
-                added_count = 0
-                skipped_count = 0
-                
+                # Use the holiday manager to import from file data
                 holiday_manager = HolidayManager(current_user.id)
-                
-                for component in cal.walk():
-                    if component.name == "VEVENT":
-                        event_date = component.get('dtstart').dt
-                        
-                        # Skip if not a date (e.g. datetime)
-                        if not isinstance(event_date, datetime.date):
-                            continue
-                        
-                        summary = str(component.get('summary', 'Imported Holiday'))
-                        
-                        # Check if holiday already exists
-                        existing = holiday_repository.get_by_date(event_date, current_user.id)
-                        if existing:
-                            skipped_count += 1
-                        else:
-                            # Create new holiday
-                            holiday_repository.create(event_date, summary, current_user.id)
-                            
-                            # Add to holiday file
-                            try:
-                                date_str = event_date.strftime('%Y-%m-%d')
-                                holiday_manager.add_holiday(date_str, user_id=current_user.id)
-                                added_count += 1
-                            except Exception as e:
-                                logging.error(f"Error adding holiday {date_str} to file: {str(e)}")
-                
-                # Commit all changes
-                holiday_repository.commit()
+                result = holiday_manager.import_ics_data(file_data)
                 
                 # Flash message with results
                 lang = get_language()
-                if added_count > 0:
-                    flash(get_translation('holidays_imported', lang).format(count=added_count))
-                if skipped_count > 0:
-                    flash(get_translation('holidays_skipped', lang).format(count=skipped_count), 'warning')
+                if result['added'] > 0:
+                    flash(get_translation('holidays_imported', lang).format(count=result['added']))
+                if result['skipped'] > 0:
+                    flash(get_translation('holidays_skipped', lang).format(count=result['skipped']), 'warning')
                     
                 return redirect(url_for('holidays.index'))
             except Exception as e:
@@ -369,7 +292,8 @@ if ICALENDAR_AVAILABLE:
 def get_dates():
     """Get all holiday dates as JSON for calendar integration."""
     try:
-        dates = holiday_repository.get_all_dates(current_user.id)
+        holiday_manager = HolidayManager(current_user.id)
+        dates = holiday_manager.get_all_dates()
         return jsonify(dates)
     except Exception as e:
         logging.error(f"Error fetching holiday dates: {str(e)}")

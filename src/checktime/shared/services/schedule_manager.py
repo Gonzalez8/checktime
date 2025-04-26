@@ -322,6 +322,28 @@ class ScheduleManager:
             logger.error(error_msg)
             return None
     
+    def get_day_schedule_by_id(self, day_schedule_id: int) -> Optional[DaySchedule]:
+        """
+        Get a day schedule by ID.
+        
+        Args:
+            day_schedule_id (int): ID of the day schedule to retrieve
+            
+        Returns:
+            Optional[DaySchedule]: Day schedule if found, None otherwise
+        """
+        try:
+            day_schedule = self.day_repository.get_by_id(day_schedule_id)
+            if day_schedule:
+                logger.info(f"Found day schedule with ID {day_schedule_id}")
+            else:
+                logger.info(f"No day schedule found with ID {day_schedule_id}")
+            return day_schedule
+        except Exception as e:
+            error_msg = f"Error getting day schedule by ID: {e}"
+            logger.error(error_msg)
+            return None
+    
     def get_all_day_schedules(self, period_id: int) -> List[DaySchedule]:
         """
         Get all day schedules for a period.
@@ -372,13 +394,15 @@ class ScheduleManager:
             logger.error(error_msg)
             return None
     
-    def update_day_schedule(self, day_schedule_id: int, data: Dict[str, Any]) -> Optional[DaySchedule]:
+    def update_day_schedule(self, day_schedule_id: int, check_in_time: Optional[str] = None, 
+                          check_out_time: Optional[str] = None) -> Optional[DaySchedule]:
         """
         Update a day schedule.
         
         Args:
             day_schedule_id (int): ID of the day schedule to update
-            data (Dict[str, Any]): Data to update (day_of_week, check_in_time, check_out_time)
+            check_in_time (Optional[str]): New check-in time (format: "09:00")
+            check_out_time (Optional[str]): New check-out time (format: "18:00")
             
         Returns:
             Optional[DaySchedule]: Updated day schedule, or None on error
@@ -391,15 +415,13 @@ class ScheduleManager:
                 return None
                 
             # Update the day schedule
-            updated_day_schedule = self.day_repository.update_day_schedule(
+            updated = self.day_repository.update_day_schedule(
                 day_schedule,
-                day_of_week=data.get('day_of_week'),
-                check_in_time=data.get('check_in_time'),
-                check_out_time=data.get('check_out_time')
+                check_in_time=check_in_time,
+                check_out_time=check_out_time
             )
-            
-            logger.info(f"Updated day schedule for day {updated_day_schedule.day_name}")
-            return updated_day_schedule
+            logger.info(f"Updated day schedule with ID {day_schedule_id}")
+            return updated
         except Exception as e:
             error_msg = f"Error updating day schedule: {e}"
             logger.error(error_msg)
@@ -507,4 +529,103 @@ class ScheduleManager:
         except Exception as e:
             error_msg = f"Error getting schedule times for date: {e}"
             logger.error(error_msg)
-            return None, None 
+            return None, None
+    
+    def duplicate_period(self, period_id: int, new_name: str, new_start_date: date, 
+                       new_end_date: date, user_id: Optional[int] = None) -> Optional[SchedulePeriod]:
+        """
+        Duplicate a schedule period with new dates.
+        
+        Args:
+            period_id (int): ID of the period to duplicate
+            new_name (str): Name for the new period
+            new_start_date (date): Start date for the new period
+            new_end_date (date): End date for the new period
+            user_id (Optional[int]): User ID to filter
+            
+        Returns:
+            Optional[SchedulePeriod]: New schedule period, or None on error
+        """
+        try:
+            # Use provided user_id or fallback to instance user_id
+            user_id = user_id or self.user_id
+            
+            # Get the source period
+            source_period = self.period_repository.get_by_id(period_id, user_id)
+            if not source_period:
+                logger.warning(f"Period with ID {period_id} not found for user {user_id}")
+                return None
+                
+            # Check for overlap with existing periods
+            if self.period_repository.check_overlap(new_start_date, new_end_date, user_id):
+                logger.warning(f"Period overlap detected for user {user_id}: {new_start_date} to {new_end_date}")
+                return None
+                
+            # Create new period
+            new_period = self.period_repository.create_period(
+                new_name, new_start_date, new_end_date, user_id, source_period.is_active
+            )
+            
+            # Get day schedules from source period
+            source_day_schedules = self.day_repository.get_all_by_period(source_period.id)
+            
+            # Create day schedules for new period
+            for day_schedule in source_day_schedules:
+                self.day_repository.create_day_schedule(
+                    new_period.id,
+                    day_schedule.day_of_week,
+                    day_schedule.check_in_time,
+                    day_schedule.check_out_time
+                )
+            
+            logger.info(f"Duplicated period {source_period.name} to {new_period.name} for user {user_id}")
+            return new_period
+        except Exception as e:
+            error_msg = f"Error duplicating period: {e}"
+            logger.error(error_msg)
+            return None
+    
+    def copy_day_schedules(self, source_period_id: int, target_period_id: int) -> bool:
+        """
+        Copy day schedules from one period to another.
+        
+        Args:
+            source_period_id (int): Source period ID
+            target_period_id (int): Target period ID
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            # Get source day schedules
+            source_day_schedules = self.day_repository.get_all_by_period(source_period_id)
+            if not source_day_schedules:
+                logger.warning(f"No day schedules found for source period {source_period_id}")
+                return False
+            
+            # Get target period
+            target_period = self.period_repository.get_by_id(target_period_id)
+            if not target_period:
+                logger.warning(f"Target period with ID {target_period_id} not found")
+                return False
+                
+            # Delete existing day schedules in target period
+            existing_target_day_schedules = self.day_repository.get_all_by_period(target_period_id)
+            for day_schedule in existing_target_day_schedules:
+                self.day_repository.delete(day_schedule)
+                
+            # Copy day schedules to target period
+            for day_schedule in source_day_schedules:
+                self.day_repository.create_day_schedule(
+                    target_period_id,
+                    day_schedule.day_of_week,
+                    day_schedule.check_in_time,
+                    day_schedule.check_out_time
+                )
+                
+            logger.info(f"Copied {len(source_day_schedules)} day schedules from period {source_period_id} to {target_period_id}")
+            return True
+        except Exception as e:
+            error_msg = f"Error copying day schedules: {e}"
+            logger.error(error_msg)
+            return False 
