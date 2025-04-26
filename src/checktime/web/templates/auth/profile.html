@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+
+{% block title %}{{ _('profile') }} - {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row">
+        <div class="col-md-3">
+            <div class="card shadow mb-4">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="bi bi-person-circle"></i> {{ _('profile_menu') }}</h5>
+                </div>
+                <div class="list-group list-group-flush">
+                    <a href="#account-info" class="list-group-item list-group-item-action" data-bs-toggle="tab" role="tab">
+                        <i class="bi bi-person"></i> {{ _('account_info') }}
+                    </a>
+                    <a href="#checkjc-config" class="list-group-item list-group-item-action" data-bs-toggle="tab" role="tab">
+                        <i class="bi bi-clock"></i> {{ _('checkjc_config') }}
+                    </a>
+                    <a href="#telegram-config" class="list-group-item list-group-item-action" data-bs-toggle="tab" role="tab">
+                        <i class="bi bi-telegram"></i> {{ _('telegram_config') }}
+                    </a>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-9">
+            <div class="tab-content">
+                <!-- Account Information Tab -->
+                <div class="tab-pane fade" id="account-info" role="tabpanel">
+                    <div class="card shadow">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="mb-0"><i class="bi bi-person"></i> {{ _('account_info') }}</h5>
+                        </div>
+                        <div class="card-body">
+                            <form method="post" action="{{ url_for('auth.profile') }}">
+                                {{ form.hidden_tag() }}
+                                
+                                <div class="mb-3">
+                                    <label for="username" class="form-label">{{ _('username') }}</label>
+                                    {{ form.username(class="form-control", id="username") }}
+                                    {% for error in form.username.errors %}
+                                    <div class="text-danger">{{ error }}</div>
+                                    {% endfor %}
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label for="email" class="form-label">{{ _('email') }}</label>
+                                    {{ form.email(class="form-control", id="email") }}
+                                    {% for error in form.email.errors %}
+                                    <div class="text-danger">{{ error }}</div>
+                                    {% endfor %}
+                                </div>
+                                
+                                <hr class="my-4">
+                                <h5>{{ _('change_password') }}</h5>
+                                <p class="text-muted small">{{ _('change_password_info') }}</p>
+                                
+                                <div class="mb-3">
+                                    <label for="current_password" class="form-label">{{ _('current_password') }}</label>
+                                    {{ form.current_password(class="form-control", id="current_password") }}
+                                    {% for error in form.current_password.errors %}
+                                    <div class="text-danger">{{ error }}</div>
+                                    {% endfor %}
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label for="new_password" class="form-label">{{ _('new_password') }}</label>
+                                    {{ form.new_password(class="form-control", id="new_password") }}
+                                    {% for error in form.new_password.errors %}
+                                    <div class="text-danger">{{ error }}</div>
+                                    {% endfor %}
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label for="confirm_password" class="form-label">{{ _('confirm_new_password') }}</label>
+                                    {{ form.confirm_password(class="form-control", id="confirm_password") }}
+                                    {% for error in form.confirm_password.errors %}
+                                    <div class="text-danger">{{ error }}</div>
+                                    {% endfor %}
+                                </div>
+                                
+                                <div class="d-grid gap-2 mt-4">
+                                    {{ form.submit(class="btn btn-primary") }}
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- CheckJC Configuration Tab -->
+                <div class="tab-pane fade" id="checkjc-config" role="tabpanel">
+                    <div class="card shadow">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="mb-0"><i class="bi bi-clock"></i> {{ _('checkjc_config') }}</h5>
+                        </div>
+                        <div class="card-body">
+                            <form method="post" action="{{ url_for('auth.profile') }}">
+                                {{ checkjc_form.hidden_tag() }}
+                                <input type="hidden" name="checkjc_submit" value="1">
+                                
+                                <p class="mb-4">{{ _('checkjc_credentials_explanation') }}</p>
+                                
+                                <div class="mb-3">
+                                    <label for="checkjc_username" class="form-label">{{ _('checkjc_username') }}</label>
+                                    {{ checkjc_form.checkjc_username(class="form-control", id="checkjc_username") }}
+                                    {% for error in checkjc_form.checkjc_username.errors %}
+                                    <div class="text-danger">{{ error }}</div>
+                                    {% endfor %}
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label for="checkjc_password" class="form-label">{{ _('checkjc_password') }}</label>
+                                    {{ checkjc_form.checkjc_password(class="form-control", id="checkjc_password", placeholder=_('leave_empty_to_keep_current')) }}
+                                    {% for error in checkjc_form.checkjc_password.errors %}
+                                    <div class="text-danger">{{ error }}</div>
+                                    {% endfor %}
+                                    <div class="form-text">{{ _('leave_empty_to_keep_current_password') }}</div>
+                                </div>
+                                
+                                <div class="mb-3 form-check">
+                                    {{ checkjc_form.auto_checkin_enabled(class="form-check-input", id="auto_checkin_enabled") }}
+                                    <label class="form-check-label" for="auto_checkin_enabled">{{ _('enable_auto_checkin') }}</label>
+                                    <div class="form-text">{{ _('auto_checkin_explanation') }}</div>
+                                </div>
+                                
+                                <div class="d-grid gap-2 mt-4">
+                                    {{ checkjc_form.submit(class="btn btn-primary") }}
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Telegram Configuration Tab -->
+                <div class="tab-pane fade" id="telegram-config" role="tabpanel">
+                    <div class="card shadow">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="mb-0"><i class="bi bi-telegram"></i> {{ _('telegram_config') }}</h5>
+                        </div>
+                        <div class="card-body">
+                            <form method="post" action="{{ url_for('auth.profile') }}">
+                                {{ telegram_form.hidden_tag() }}
+                                <input type="hidden" name="telegram_submit" value="1">
+                                
+                                <p class="mb-4">{{ _('telegram_settings_explanation') }}</p>
+                                
+                                <div class="mb-3">
+                                    <label for="telegram_chat_id" class="form-label">{{ _('telegram_chat_id') }}</label>
+                                    {{ telegram_form.telegram_chat_id(class="form-control", id="telegram_chat_id") }}
+                                    {% for error in telegram_form.telegram_chat_id.errors %}
+                                    <div class="text-danger">{{ error }}</div>
+                                    {% endfor %}
+                                    <div class="form-text">{{ _('telegram_chat_id_help') }}</div>
+                                </div>
+                                
+                                <div class="mb-3 form-check">
+                                    {{ telegram_form.telegram_notifications_enabled(class="form-check-input", id="telegram_notifications_enabled") }}
+                                    <label class="form-check-label" for="telegram_notifications_enabled">{{ _('enable_telegram_notifications') }}</label>
+                                    <div class="form-text">{{ _('telegram_notifications_explanation') }}</div>
+                                </div>
+                                
+                                <div class="alert alert-info">
+                                    <h6><i class="bi bi-info-circle"></i> {{ _('how_to_get_telegram_chat_id') }}</h6>
+                                    <ol class="mb-0">
+                                        <li>{{ _('telegram_chat_id_step1') }}</li>
+                                        <li>{{ _('telegram_chat_id_step2') }}</li>
+                                        <li>{{ _('telegram_chat_id_step3') }}</li>
+                                        <li>{{ _('telegram_chat_id_step4') }}</li>
+                                    </ol>
+                                </div>
+                                
+                                <div class="d-grid gap-2 mt-4">
+                                    {{ telegram_form.submit(class="btn btn-primary") }}
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+    $(document).ready(function() {
+        // Set default active tab if no hash in URL
+        if(!window.location.hash) {
+            // Set the account-info tab as active
+            $('#account-info').addClass('show active');
+            $('a[href="#account-info"]').addClass('active');
+        } else {
+            // Activate tab based on URL fragment
+            var hash = window.location.hash;
+            $('a[href="' + hash + '"]').tab('show');
+            $(hash).addClass('show active');
+        }
+        
+        // Change URL fragment when tab is clicked
+        $('a[data-bs-toggle="tab"]').on('click', function (e) {
+            // Hide all tab panes
+            $('.tab-pane').removeClass('show active');
+            // Show selected tab pane
+            $($(this).attr('href')).addClass('show active');
+            // Update URL
+            history.pushState(null, null, $(this).attr('href'));
+        });
+    });
+</script>
+{% endblock %} 

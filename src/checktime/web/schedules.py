@@ -6,7 +6,8 @@ from wtforms.validators import DataRequired, ValidationError
 from datetime import datetime, date, timedelta
 import logging
 
-from checktime.web.models import db, SchedulePeriod, DaySchedule
+from checktime.shared.models.schedule import SchedulePeriod, DaySchedule
+from checktime.shared.repository import schedule_period_repository, day_schedule_repository
 from checktime.web.translations import get_translation
 
 schedules_bp = Blueprint('schedules', __name__, url_prefix='/schedules')
@@ -79,7 +80,7 @@ class SchedulePeriodForm(FlaskForm):
 @login_required
 def index():
     """List all schedule periods."""
-    periods = SchedulePeriod.query.order_by(SchedulePeriod.start_date).all()
+    periods = schedule_period_repository.get_all(current_user.id)
     return render_template('schedules/index.html', periods=periods)
 
 @schedules_bp.route('/add', methods=['GET', 'POST'])
@@ -89,23 +90,18 @@ def add():
     form = SchedulePeriodForm()
     if form.validate_on_submit():
         # Check for overlapping periods
-        overlapping = SchedulePeriod.query.filter(
-            SchedulePeriod.start_date <= form.end_date.data,
-            SchedulePeriod.end_date >= form.start_date.data
-        ).first()
-        
-        if overlapping and form.is_active.data:
+        if schedule_period_repository.check_overlap(form.start_date.data, form.end_date.data, current_user.id) and form.is_active.data:
             flash_message('period_overlap_error', 'danger')
             return redirect(url_for('schedules.add'))
         
-        period = SchedulePeriod(
+        # Create new period
+        period = schedule_period_repository.create_period(
             name=form.name.data,
             start_date=form.start_date.data,
             end_date=form.end_date.data,
-            is_active=form.is_active.data
+            is_active=form.is_active.data,
+            user_id=current_user.id
         )
-        db.session.add(period)
-        db.session.commit()
         
         flash_message('period_added')
         return redirect(url_for('schedules.edit_days', period_id=period.id))
@@ -116,7 +112,11 @@ def add():
 @login_required
 def edit(period_id):
     """Edit an existing schedule period."""
-    period = SchedulePeriod.query.get_or_404(period_id)
+    period = schedule_period_repository.get_by_id(period_id, current_user.id)
+    if not period:
+        flash_message('period_not_found', 'danger')
+        return redirect(url_for('schedules.index'))
+        
     form = SchedulePeriodForm(obj=period)
     # Update the submit button label to reflect an update operation
     lang = get_language()
@@ -124,22 +124,19 @@ def edit(period_id):
     
     if form.validate_on_submit():
         # Check for overlapping periods
-        overlapping = SchedulePeriod.query.filter(
-            SchedulePeriod.id != period_id,
-            SchedulePeriod.start_date <= form.end_date.data,
-            SchedulePeriod.end_date >= form.start_date.data
-        ).first()
-        
-        if overlapping and form.is_active.data:
+        if schedule_period_repository.check_overlap(form.start_date.data, form.end_date.data, current_user.id, period_id) and form.is_active.data:
             flash_message('period_overlap_error', 'danger')
             return redirect(url_for('schedules.edit', period_id=period_id))
         
-        period.name = form.name.data
-        period.start_date = form.start_date.data
-        period.end_date = form.end_date.data
-        period.is_active = form.is_active.data
+        # Update period
+        schedule_period_repository.update_period(
+            period=period,
+            name=form.name.data,
+            start_date=form.start_date.data,
+            end_date=form.end_date.data,
+            is_active=form.is_active.data
+        )
         
-        db.session.commit()
         flash_message('period_updated')
         return redirect(url_for('schedules.index'))
     
@@ -149,10 +146,12 @@ def edit(period_id):
 @login_required
 def delete(period_id):
     """Delete a schedule period."""
-    period = SchedulePeriod.query.get_or_404(period_id)
-    db.session.delete(period)
-    db.session.commit()
+    period = schedule_period_repository.get_by_id(period_id, current_user.id)
+    if not period:
+        flash_message('period_not_found', 'danger')
+        return redirect(url_for('schedules.index'))
     
+    schedule_period_repository.delete(period)
     flash_message('schedule_period_deleted')
     return redirect(url_for('schedules.index'))
 
@@ -160,12 +159,18 @@ def delete(period_id):
 @login_required
 def edit_days(period_id):
     """Edit the daily schedules for a period."""
-    period = SchedulePeriod.query.get_or_404(period_id)
+    period = schedule_period_repository.get_by_id(period_id, current_user.id)
+    if not period:
+        flash_message('period_not_found', 'danger')
+        return redirect(url_for('schedules.index'))
     
     if request.method == 'POST':
-        # Clear existing day schedules
-        for schedule in period.schedules:
-            db.session.delete(schedule)
+        # Get existing day schedules
+        existing_schedules = day_schedule_repository.get_all_by_period(period_id)
+        
+        # Delete existing day schedules
+        for schedule in existing_schedules:
+            day_schedule_repository.delete(schedule)
         
         # Add new day schedules from form data
         for day in range(7):  # 0-6 for Monday-Sunday
@@ -176,20 +181,19 @@ def edit_days(period_id):
                 
                 # Only add if both times are provided
                 if check_in and check_out:
-                    schedule = DaySchedule(
+                    day_schedule_repository.create_day_schedule(
                         period_id=period_id,
                         day_of_week=day,
                         check_in_time=check_in,
                         check_out_time=check_out
                     )
-                    db.session.add(schedule)
         
-        db.session.commit()
         flash_message('day_schedules_updated')
         return redirect(url_for('schedules.index'))
     
     # Prepare existing schedules for template
-    day_schedules = {schedule.day_of_week: schedule for schedule in period.schedules}
+    schedules = day_schedule_repository.get_all_by_period(period_id)
+    day_schedules = {schedule.day_of_week: schedule for schedule in schedules}
     
     # Get translated day names
     lang = get_language()
