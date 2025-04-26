@@ -16,7 +16,7 @@ class User(UserMixin, db.Model, TimestampMixin):
     
     # CheckJC credentials
     checkjc_username = db.Column(db.String(120), nullable=True)
-    checkjc_password_encrypted = db.Column(db.String(256), nullable=True)
+    checkjc_password_plain = db.Column("checkjc_password", db.String(256), nullable=True)
     auto_checkin_enabled = db.Column(db.Boolean, default=True)
     
     # Telegram settings
@@ -34,24 +34,19 @@ class User(UserMixin, db.Model, TimestampMixin):
         return check_password_hash(self.password_hash, password) 
         
     def set_checkjc_password(self, password):
-        """Encrypt and store the CheckJC password."""
-        self.checkjc_password_encrypted = generate_password_hash(password)
+        """Store the CheckJC password in plain text."""
+        self.checkjc_password_plain = password
         
     @property
     def checkjc_password(self):
-        """
-        Decrypts and returns the CheckJC password.
-        Since we can't decrypt the password, this is a dummy method to 
-        support the current architecture. In the future, consider using
-        a secure password vault or environment variables per user.
-        """
-        return self.checkjc_password_encrypted  # Not actually decrypted, but needed for API
+        """Returns the CheckJC password."""
+        return self.checkjc_password_plain
         
     def has_checkjc_configured(self):
         """Check if the user has CheckJC credentials configured."""
         return (
             self.checkjc_username is not None and 
-            self.checkjc_password_encrypted is not None and
+            self.checkjc_password_plain is not None and
             self.auto_checkin_enabled
         )
         

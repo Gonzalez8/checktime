@@ -50,7 +50,7 @@ class UserRepository(BaseRepository[User]):
         """
         return User.query.filter(
             User.checkjc_username.isnot(None),
-            User.checkjc_password_encrypted.isnot(None),
+            User.checkjc_password_plain.isnot(None),
             User.auto_checkin_enabled == True
         ).all()
         

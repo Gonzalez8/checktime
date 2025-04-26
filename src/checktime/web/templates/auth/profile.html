@@ -11,13 +11,13 @@
                     <h5 class="mb-0"><i class="bi bi-person-circle"></i> {{ _('profile_menu') }}</h5>
                 </div>
                 <div class="list-group list-group-flush">
-                    <a href="#account-info" class="list-group-item list-group-item-action" data-bs-toggle="tab">
+                    <a href="#account-info" class="list-group-item list-group-item-action" data-bs-toggle="tab" role="tab">
                         <i class="bi bi-person"></i> {{ _('account_info') }}
                     </a>
-                    <a href="#checkjc-config" class="list-group-item list-group-item-action" data-bs-toggle="tab">
+                    <a href="#checkjc-config" class="list-group-item list-group-item-action" data-bs-toggle="tab" role="tab">
                         <i class="bi bi-clock"></i> {{ _('checkjc_config') }}
                     </a>
-                    <a href="#telegram-config" class="list-group-item list-group-item-action" data-bs-toggle="tab">
+                    <a href="#telegram-config" class="list-group-item list-group-item-action" data-bs-toggle="tab" role="tab">
                         <i class="bi bi-telegram"></i> {{ _('telegram_config') }}
                     </a>
                 </div>
@@ -27,7 +27,7 @@
         <div class="col-md-9">
             <div class="tab-content">
                 <!-- Account Information Tab -->
-                <div class="tab-pane fade show active" id="account-info">
+                <div class="tab-pane fade" id="account-info" role="tabpanel">
                     <div class="card shadow">
                         <div class="card-header bg-primary text-white">
                             <h5 class="mb-0"><i class="bi bi-person"></i> {{ _('account_info') }}</h5>
@@ -89,7 +89,7 @@
                 </div>
                 
                 <!-- CheckJC Configuration Tab -->
-                <div class="tab-pane fade" id="checkjc-config">
+                <div class="tab-pane fade" id="checkjc-config" role="tabpanel">
                     <div class="card shadow">
                         <div class="card-header bg-primary text-white">
                             <h5 class="mb-0"><i class="bi bi-clock"></i> {{ _('checkjc_config') }}</h5>
@@ -133,7 +133,7 @@
                 </div>
                 
                 <!-- Telegram Configuration Tab -->
-                <div class="tab-pane fade" id="telegram-config">
+                <div class="tab-pane fade" id="telegram-config" role="tabpanel">
                     <div class="card shadow">
                         <div class="card-header bg-primary text-white">
                             <h5 class="mb-0"><i class="bi bi-telegram"></i> {{ _('telegram_config') }}</h5>
@@ -186,14 +186,26 @@
 {% block scripts %}
 {{ super() }}
 <script>
-    // Activate tab based on URL fragment
     $(document).ready(function() {
-        if(window.location.hash) {
-            $('a[href="' + window.location.hash + '"]').tab('show');
+        // Set default active tab if no hash in URL
+        if(!window.location.hash) {
+            // Set the account-info tab as active
+            $('#account-info').addClass('show active');
+            $('a[href="#account-info"]').addClass('active');
+        } else {
+            // Activate tab based on URL fragment
+            var hash = window.location.hash;
+            $('a[href="' + hash + '"]').tab('show');
+            $(hash).addClass('show active');
         }
         
         // Change URL fragment when tab is clicked
-        $('a[data-bs-toggle="tab"]').on('shown.bs.tab', function (e) {
+        $('a[data-bs-toggle="tab"]').on('click', function (e) {
+            // Hide all tab panes
+            $('.tab-pane').removeClass('show active');
+            // Show selected tab pane
+            $($(this).attr('href')).addClass('show active');
+            // Update URL
             history.pushState(null, null, $(this).attr('href'));
         });
     });

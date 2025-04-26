@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-# Instalar dependencias del sistema
+# Instalar dependencias del sistema necesarias para Selenium y Chromium
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     gnupg \
@@ -23,20 +23,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxfixes3 \
     libxrandr2 \
     xdg-utils \
+    chromium \
+    chromium-driver \
     && rm -rf /var/lib/apt/lists/*
-
-# Intenta instalar Chrome, pero no falla si no es posible (para compatibilidad ARM/amd64)
-RUN set -e; \
-    if [ "$(uname -m)" = "x86_64" ]; then \
-      wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | gpg --dearmor > /usr/share/keyrings/google.gpg \
-      && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google.list \
-      && apt-get update \
-      && apt-get install -y --no-install-recommends google-chrome-stable || true; \
-    fi \
-    && rm -rf /var/lib/apt/lists/*
-
-# Ya no necesitamos especificar una versión fija de ChromeDriver
-# webdriver-manager se encargará de descargar la versión compatible
 
 # Crear y establecer el directorio de trabajo
 WORKDIR /app
@@ -48,11 +37,15 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copiar el resto del código
 COPY . .
 
-# Instalar el paquete en modo desarrollo
+# Instalar el paquete en modo editable
 RUN pip install -e .
 
 # Asegurarse de que el módulo está en el PYTHONPATH
 ENV PYTHONPATH=/app
+
+# Variables de entorno para Chrome y Chromedriver
+ENV CHROME_BIN=/usr/bin/chromium
+ENV CHROMEDRIVER_BIN=/usr/bin/chromedriver
 
 # Crear directorios necesarios
 RUN mkdir -p /var/log/checktime && chmod 777 /var/log/checktime

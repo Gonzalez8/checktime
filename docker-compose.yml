@@ -76,7 +76,7 @@ services:
       - .env
     environment:
       - PYTHONPATH=/app
-      - SIMULATION_MODE=true
+      - SIMULATION_MODE=false
     volumes:
       - ./config:/app/config
       - /var/log/checktime:/var/log/checktime
