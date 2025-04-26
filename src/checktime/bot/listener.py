@@ -11,7 +11,7 @@ from typing import Optional, Dict, Any
 from checktime.utils.logger import bot_logger, error_logger
 from checktime.utils.telegram import TelegramClient
 from checktime.shared.services.holiday_manager import HolidayManager
-from checktime.shared.repository import holiday_repository, user_repository
+from checktime.shared.services.user_manager import UserManager
 from checktime.shared.config import get_telegram_token
 from checktime.web import create_app
 
@@ -52,8 +52,7 @@ class TelegramBotListener:
             telegram_client (Optional[TelegramClient]): Telegram client
         """
         self.telegram = telegram_client or TelegramClient()
-        self.user_repo = user_repository
-        self.holiday_repo = holiday_repository
+        self.user_manager = UserManager()
         self.last_update_id = None
     
     def get_user_by_chat_id(self, chat_id: str):
@@ -66,15 +65,7 @@ class TelegramBotListener:
         Returns:
             User or None: User object if found, None otherwise
         """
-        # Get all users with Telegram configured
-        users = self.user_repo.get_all_with_telegram_configured()
-        
-        # Find the user with matching chat ID
-        for user in users:
-            if str(user.telegram_chat_id) == str(chat_id):
-                return user
-                
-        return None
+        return self.user_manager.get_user_by_chat_id(chat_id)
     
     def process_command(self, message: Dict[str, Any]) -> None:
         """
@@ -99,7 +90,7 @@ class TelegramBotListener:
             user = self.get_user_by_chat_id(chat_id)
             if not user:
                 bot_logger.warning(f"Message ignored from unauthorized chat: {chat_id}")
-                self.telegram.send_message("You are not authorized to use this bot. Please register or update your profile at CheckTime web interface with this chat ID.", chat_id)
+                self.telegram.send_message(f"You are not authorized to use this bot. Please register or update your profile at CheckTime web interface with this chat ID.", chat_id)
                 return
             
             bot_logger.info(f"User {user.username} (ID: {user.id}) identified for chat ID {chat_id}")
@@ -139,7 +130,7 @@ class TelegramBotListener:
         match = re.match(ADD_HOLIDAY_PATTERN, text)
         if match:
             date_str = match.group(1)
-            description = match.group(2) or f"Holiday on {date_str}"
+            description = match.group(2) or f"Holiday added by Telegram bot"
             try:
                 date = datetime.strptime(date_str, "%Y-%m-%d").date()
                 return date, description
@@ -180,9 +171,9 @@ class TelegramBotListener:
                 success = holiday_manager.add_holiday(date_str, description, user.id)
             
             if success:
-                    self.telegram.send_message(f"✅ Holiday added: {date_str}", chat_id)
+                self.telegram.send_message(f"✅ Holiday added: {date_str}", chat_id)
             else:
-                    self.telegram.send_message(f"⚠️ Holiday {date_str} already exists.", chat_id)
+                self.telegram.send_message(f"⚠️ Holiday {date_str} already exists.", chat_id)
             
         except Exception as e:
             error_msg = f"Error adding holiday: {e}"
@@ -209,9 +200,9 @@ class TelegramBotListener:
                 success = holiday_manager.delete_holiday(date_str, user.id)
             
             if success:
-                    self.telegram.send_message(f"✅ Holiday removed: {date_str}", chat_id)
+                self.telegram.send_message(f"✅ Holiday removed: {date_str}", chat_id)
             else:
-                    self.telegram.send_message(f"⚠️ Holiday {date_str} does not exist.", chat_id)
+                self.telegram.send_message(f"⚠️ Holiday {date_str} does not exist.", chat_id)
             
         except Exception as e:
             error_msg = f"Error removing holiday: {e}"
@@ -241,7 +232,10 @@ class TelegramBotListener:
             
             # Create the message
             message = f"📅 *Upcoming holidays for {user.username}:*\n"
-            for date_str, desc, days_remaining in upcoming_holidays:
+            for holiday in upcoming_holidays:
+                date_str = holiday.date.strftime("%Y-%m-%d")
+                desc = holiday.description
+                days_remaining = holiday.days_remaining
                 day_text = "today" if days_remaining == 0 else f"in {days_remaining} day{'s' if days_remaining != 1 else ''}"
                 message += f"- {date_str} ({desc}): {day_text}\n"
             

@@ -1,13 +1,14 @@
 from flask import Blueprint, render_template, request, jsonify, g
 from flask_login import login_required, current_user
 
-from checktime.shared.models import Holiday, SchedulePeriod, DaySchedule
-from checktime.shared.repository import holiday_repository, schedule_period_repository, day_schedule_repository
+from checktime.shared.services.holiday_manager import HolidayManager
+from checktime.shared.services.schedule_manager import ScheduleManager
 from datetime import datetime, timedelta, date
 import calendar
 from checktime.web.translations import get_translation
 
 dashboard_bp = Blueprint('dashboard', __name__, url_prefix='/dashboard')
+
 
 @dashboard_bp.route('/')
 @dashboard_bp.route('/calendar/<int:year>/<int:month>')
@@ -45,11 +46,15 @@ def index(year=None, month=None):
         next_month = month + 1
         next_year = year
     
-    # Get holidays
-    upcoming_holidays = holiday_repository.get_upcoming_holidays(today, 5, current_user.id)
+    # Initialize managers
+    holiday_manager = HolidayManager(current_user.id)
+    schedule_manager = ScheduleManager(current_user.id)
+    
+    # Get holidays - now directly using Holiday objects with days_remaining attribute
+    upcoming_holidays = holiday_manager.get_upcoming_holidays()
     
     # Get active schedule periods
-    active_periods = schedule_period_repository.get_active_periods_after_date(today, current_user.id)
+    active_periods = schedule_manager.get_active_periods_after_date(today)
     
     # Get current schedule
     current_schedule = next((period for period in active_periods 
@@ -58,7 +63,7 @@ def index(year=None, month=None):
     # Get day schedules if current schedule exists
     day_schedules = []
     if current_schedule:
-        day_schedules = sorted(day_schedule_repository.get_all_by_period(current_schedule.id), 
+        day_schedules = sorted(schedule_manager.get_all_day_schedules(current_schedule.id), 
                               key=lambda x: x.day_of_week)
     
     # Weekly stats: number of working days
@@ -70,13 +75,13 @@ def index(year=None, month=None):
     days_this_week = 0
     
     # Get holidays for this week
-    week_holidays = holiday_repository.get_holidays_for_date_range(start_of_week, end_of_week, current_user.id)
+    week_holidays = holiday_manager.get_holidays_for_date_range(start_of_week, end_of_week)
     holiday_dates = [h.date for h in week_holidays]
     
     # Count working days (weekdays with schedule that are not holidays)
     if current_schedule:
         # Get all days with schedules for this period
-        day_schedules_dict = day_schedule_repository.get_all_by_period(current_schedule.id)
+        day_schedules_dict = schedule_manager.get_all_day_schedules(current_schedule.id)
         scheduled_days = [day.day_of_week for day in day_schedules_dict]
         
         for i in range(7):
@@ -95,7 +100,7 @@ def index(year=None, month=None):
                 days_this_week += 1
     
     # Get all active periods that overlap with the selected month for the calendar
-    calendar_active_periods = schedule_period_repository.get_periods_for_date_range(current_date, last_day_of_month, current_user.id)
+    calendar_active_periods = schedule_manager.get_periods_for_date_range(current_date, last_day_of_month)
     
     # Generate calendar data for the selected month
     calendar_data = generate_calendar_data(year, month, calendar_active_periods, current_user.id)
@@ -155,8 +160,11 @@ def calendar_partial(year, month):
         next_month = month + 1
         next_year = year
     
+    # Initialize manager
+    schedule_manager = ScheduleManager(current_user.id)
+    
     # Get all active schedule periods that overlap with the selected month
-    active_periods = schedule_period_repository.get_periods_for_date_range(current_date, last_day_of_month, current_user.id)
+    active_periods = schedule_manager.get_periods_for_date_range(current_date, last_day_of_month)
     
     # Generate calendar data for all active periods that overlap with this month
     calendar_data = generate_calendar_data(year, month, active_periods, current_user.id)
@@ -192,7 +200,11 @@ def generate_calendar_data(year, month, active_periods, user_id):
     start_date = first_day
     end_date = date(year, month, num_days)
     
-    holidays = holiday_repository.get_holidays_for_date_range(start_date, end_date, user_id)
+    # Initialize managers
+    holiday_manager = HolidayManager(user_id)
+    schedule_manager = ScheduleManager(user_id)
+    
+    holidays = holiday_manager.get_holidays_for_date_range(start_date, end_date)
     
     # Create a dictionary of holidays for quick lookup
     holiday_dict = {h.date: h for h in holidays}
@@ -205,7 +217,7 @@ def generate_calendar_data(year, month, active_periods, user_id):
         # Check if this month overlaps with the schedule period
         if not (end_date < period.start_date or start_date > period.end_date):
             # Get all day schedules for this period
-            day_schedules = day_schedule_repository.get_all_by_period(period.id)
+            day_schedules = schedule_manager.get_all_day_schedules(period.id)
             
             # Build a dictionary of daily schedules for this period
             schedule_dict = {day_schedule.day_of_week: day_schedule for day_schedule in day_schedules}

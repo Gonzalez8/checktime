@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Set, Optional, List, Tuple
 
 from checktime.shared.repository.holiday_repository import HolidayRepository
+from checktime.shared.models.holiday import Holiday
 
 # Create logger
 logger = logging.getLogger(__name__)
@@ -128,7 +129,7 @@ class HolidayManager:
             logger.error(error_msg)
             return False
     
-    def get_upcoming_holidays(self, user_id: Optional[int] = None) -> List[Tuple[str, str, int]]:
+    def get_upcoming_holidays(self, user_id: Optional[int] = None) -> List[Holiday]:
         """
         Get upcoming holidays for the current year.
         
@@ -136,7 +137,7 @@ class HolidayManager:
             user_id (Optional[int]): User ID to filter holidays
             
         Returns:
-            List[Tuple[str, str, int]]: List of (date_str, description, days_remaining) tuples
+            List[Holiday]: List of upcoming Holiday objects
         """
         try:
             # Use provided user_id or fallback to instance user_id
@@ -154,18 +155,45 @@ class HolidayManager:
             # Filter to show only upcoming holidays
             upcoming = []
             for holiday in holidays:
-                holiday_date = holiday.date
-                if holiday_date >= current_date and holiday_date.year == current_year:
-                    days_remaining = (holiday_date - current_date).days
-                    upcoming.append((holiday.date_str, holiday.description, days_remaining))
+                if holiday.date >= current_date and holiday.date.year == current_year:
+                    # Calculate days_remaining and add it as an attribute to the holiday object
+                    days_remaining = (holiday.date - current_date).days
+                    holiday.days_remaining = days_remaining
+                    upcoming.append(holiday)
             
-            return sorted(upcoming, key=lambda x: x[0])
+            return sorted(upcoming, key=lambda x: x.date)
             
         except Exception as e:
             error_msg = f"Error getting upcoming holidays: {e}"
             logger.error(error_msg)
             return []
     
+    def get_holidays_for_date_range(self, start_date: datetime.date, end_date: datetime.date, user_id: Optional[int] = None) -> List[Holiday]:
+        """
+        Get all holidays within a date range for a specific user.
+        
+        Args:
+            start_date (datetime.date): Start date
+            end_date (datetime.date): End date
+            user_id (Optional[int]): User ID to filter holidays
+            
+        Returns:
+            List[Holiday]: List of holidays within the date range
+        """
+        try:
+            # Use provided user_id or fallback to instance user_id
+            user_id = user_id or self.user_id
+            if user_id is None:
+                logger.warning("No user_id provided for get_holidays_for_date_range")
+                return []
+                
+            holidays = self.repository.get_holidays_for_date_range(start_date, end_date, user_id)
+            logger.info(f"Found {len(holidays)} holidays for date range {start_date} to {end_date}, user {user_id}")
+            return holidays
+        except Exception as e:
+            error_msg = f"Error getting holidays for date range: {e}"
+            logger.error(error_msg)
+            return []
     
     def clear_holidays(self) -> bool:
         """

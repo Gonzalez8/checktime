@@ -13,7 +13,9 @@ import threading
 from checktime.scheduler.checker import CheckJCClient
 from checktime.shared.config import get_log_level
 from checktime.utils.telegram import TelegramClient
-from checktime.shared.repository import holiday_repository, schedule_period_repository, day_schedule_repository, user_repository
+from checktime.shared.services.holiday_manager import HolidayManager
+from checktime.shared.services.user_manager import UserManager
+from checktime.shared.services.schedule_manager import ScheduleManager
 from checktime.web import create_app
 
 # Configure logging
@@ -29,6 +31,10 @@ logger = logging.getLogger(__name__)
 
 # Initialize Telegram client
 telegram_client = TelegramClient()
+
+# Initialize service managers
+user_manager = UserManager()
+schedule_manager = ScheduleManager()
 
 # Create Flask app
 app = create_app()
@@ -47,20 +53,23 @@ def is_working_day(user_id=None):
         today = datetime.now().date()
         weekday = today.weekday()
         
-        # Check if it's a holiday for this user
-        holiday = holiday_repository.get_by_date(today, user_id)
-        if holiday:
+        # Check if it's a holiday for this user using HolidayManager
+        holiday_manager = HolidayManager(user_id)
+        date_str = today.strftime('%Y-%m-%d')
+        holidays = holiday_manager.load_holidays(user_id)
+        
+        if date_str in holidays:
             logger.info(f"Holiday found in database for user {user_id}: {today}")
             return False
         
-        # Check if there's a schedule for today for this user
-        active_period = schedule_period_repository.get_active_period_for_date(today, user_id)
+        # Check if there's a schedule for today for this user using ScheduleManager
+        active_period = schedule_manager.get_active_period_for_date(today, user_id)
         if not active_period:
             logger.info(f"No active period for today: {today} for user {user_id}")
             return False
         
         # Check if there's a schedule configured for this day of the week
-        day_schedule = day_schedule_repository.get_by_period_and_day(active_period.id, weekday)
+        day_schedule = schedule_manager.get_day_schedule(active_period.id, weekday)
         if not day_schedule:
             logger.info(f"No schedule configured for today ({weekday}): {today} for user {user_id}")
             return False
@@ -80,18 +89,13 @@ def get_schedule_times(user_id):
     """
     with app.app_context():
         today = datetime.now().date()
-        weekday = today.weekday()
         
-        # Get active period for today for this user
-        active_period = schedule_period_repository.get_active_period_for_date(today, user_id)
+        # Get schedule times for today using ScheduleManager
+        check_in_time, check_out_time = schedule_manager.get_schedule_times_for_date(today, user_id)
         
-        if active_period:
-            # Get day schedule for today's weekday
-            day_schedule = day_schedule_repository.get_by_period_and_day(active_period.id, weekday)
-            
-            if day_schedule:
-                logger.info(f"Using schedule from database for user {user_id}: {day_schedule.check_in_time} - {day_schedule.check_out_time}")
-                return day_schedule.check_in_time, day_schedule.check_out_time
+        if check_in_time and check_out_time:
+            logger.info(f"Using schedule from database for user {user_id}: {check_in_time} - {check_out_time}")
+            return check_in_time, check_out_time
         
         # If no configuration in the database, don't clock
         logger.info(f"No schedule configured in the database for user {user_id}. Automatic clock in/out will not be performed.")
@@ -134,8 +138,8 @@ def perform_check(check_type):
         check_type (str): Type of check ('in' or 'out')
     """
     with app.app_context():
-        # Get all users that have CheckJC configured
-        users = user_repository.get_all_with_checkjc_configured()
+        # Get all users that have CheckJC configured using UserManager
+        users = user_manager.get_all_with_checkjc_configured()
     
     if not users:
         logger.info(f"No users with CheckJC configured. No {check_type} checks will be performed.")
@@ -152,8 +156,8 @@ def perform_check(check_type):
 def schedule_check():
     """Check if it's time to perform check-in/out based on schedules for all users"""
     with app.app_context():
-        # Get all users with CheckJC configured
-        users = user_repository.get_all_with_checkjc_configured()
+        # Get all users with CheckJC configured using UserManager
+        users = user_manager.get_all_with_checkjc_configured()
     
     if not users:
         return

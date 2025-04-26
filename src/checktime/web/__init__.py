@@ -3,9 +3,9 @@ from flask import Flask, request, session, redirect, url_for, g, render_template
 from flask_login import LoginManager, current_user
 
 from checktime.shared.db import db, init_db
-from checktime.shared.config import get_secret_key, get_database_url, get_admin_password
+from checktime.shared.config import get_secret_key, get_database_url
 from checktime.shared.models.user import User
-from checktime.shared.repository import user_repository
+from checktime.shared.services.user_manager import UserManager
 from checktime.web.translations import t
 
 login_manager = LoginManager()
@@ -40,15 +40,6 @@ def create_app(test_config=None):
     # Create database tables
     with app.app_context():
         db.create_all()
-        
-        # Create admin user if it doesn't exist
-        if not user_repository.get_by_username('admin'):
-            user_repository.create_user(
-                username='admin',
-                email='admin@example.com',
-                password=get_admin_password(),
-                is_admin=True
-            )
     
     # Register blueprints
     from checktime.web.auth import auth_bp
@@ -63,7 +54,9 @@ def create_app(test_config=None):
     
     @login_manager.user_loader
     def load_user(user_id):
-        return user_repository.get_by_id(int(user_id))
+        # Use UserManager to load the user
+        user_manager = UserManager()
+        return user_manager.get_by_id(int(user_id))
     
     # Configure login view
     login_manager.login_view = 'auth.login'
