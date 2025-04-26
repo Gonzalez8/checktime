@@ -51,8 +51,8 @@ def init_db():
         # Add some sample holidays
         if Holiday.query.count() == 0:
             holidays = [
-                Holiday(date=datetime(2025, 1, 1).date(), description="New Year's Day"),
-                Holiday(date=datetime(2025, 12, 25).date(), description="Christmas Day"),
+                Holiday(date=datetime(2025, 1, 1).date(), description="New Year's Day", user_id=admin.id),
+                Holiday(date=datetime(2025, 12, 25).date(), description="Christmas Day", user_id=admin.id),
             ]
             for holiday in holidays:
                 db.session.add(holiday)
@@ -65,7 +65,8 @@ def init_db():
                 name="Standard Schedule",
                 start_date=datetime(2025, 1, 1).date(),
                 end_date=datetime(2025, 12, 31).date(),
-                is_active=True
+                is_active=True,
+                user_id=admin.id
             )
             db.session.add(period)
             db.session.flush()  # To get the ID
@@ -98,15 +99,17 @@ def create_admin_user():
         user_repository.create_user(
             username='admin',
             email='admin@example.com',
-            password='admin123',
+            password=get_admin_password(),
             is_admin=True
         )
 
         logger.info("Admin user created successfully")
     else:
         logger.info("Admin user already exists")
+    
+    return admin
 
-def create_default_holidays():
+def create_default_holidays(admin_user):
     """Create some default holidays."""
     # Example holidays for the current year
     year = datetime.now().year
@@ -122,16 +125,16 @@ def create_default_holidays():
         date_obj = datetime.strptime(date_str, "%Y-%m-%d").date()
         
         # Check if holiday exists
-        existing = holiday_repository.get_by_date(date_obj)
+        existing = holiday_repository.get_by_date(date_obj, admin_user.id)
         
         if not existing:
             logger.info(f"Creating holiday: {date_str} - {description}")
-            holiday_repository.create(date_obj, description)
+            holiday_repository.create(date_obj, description, admin_user.id)
 
-def create_default_schedule():
+def create_default_schedule(admin_user):
     """Create a default schedule if none exists."""
-    # Get all schedule periods
-    periods = schedule_period_repository.get_active_periods()
+    # Get all schedule periods for the admin user
+    periods = schedule_period_repository.get_active_periods(admin_user.id)
     
     if not periods:
         logger.info("Creating default schedule period")
@@ -146,7 +149,8 @@ def create_default_schedule():
             name="Standard Schedule",
             start_date=start_date,
             end_date=end_date,
-            is_active=True
+            is_active=True,
+            user_id=admin_user.id
         )
         
         # Create schedule for each day (Monday to Friday)
@@ -166,14 +170,14 @@ def init_defaults(app: Flask = None):
     """Initialize default data."""
     logger.info("Initializing default data")
     
-    # Create admin user
-    create_admin_user()
+    # Create admin user and get the reference
+    admin_user = create_admin_user()
     
     # Create default holidays
-    create_default_holidays()
+    create_default_holidays(admin_user)
     
     # Create default schedule
-    create_default_schedule()
+    create_default_schedule(admin_user)
     
     logger.info("Default data initialization complete")
 

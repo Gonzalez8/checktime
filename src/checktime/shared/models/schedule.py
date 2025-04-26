@@ -10,6 +10,7 @@ class SchedulePeriod(db.Model, TimestampMixin):
     start_date = db.Column(db.Date, nullable=False)
     end_date = db.Column(db.Date, nullable=False)
     is_active = db.Column(db.Boolean, default=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     schedules = db.relationship('DaySchedule', backref='period', lazy=True, cascade="all, delete-orphan")
     
     def __repr__(self):

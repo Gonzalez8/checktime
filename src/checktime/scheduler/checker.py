@@ -15,7 +15,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, WebDriverException
 from webdriver_manager.chrome import ChromeDriverManager
 
-from checktime.shared.config import get_checkjc_username, get_checkjc_password, get_selenium_timeout
+from checktime.shared.config import get_selenium_timeout
 from checktime.utils.telegram import TelegramClient
 
 # Create logger
@@ -30,10 +30,19 @@ SIMULATION_MODE = platform.machine() == 'arm64' or os.environ.get('SIMULATION_MO
 class CheckJCClient:
     """Client for interacting with the CheckJC system for check-in and check-out."""
     
-    def __init__(self):
-        """Initialize the CheckJC client."""
-        self.username = get_checkjc_username()
-        self.password = get_checkjc_password()
+    def __init__(self, username=None, password=None):
+        """
+        Initialize the CheckJC client.
+        
+        Args:
+            username (str, optional): The username for CheckJC. Required.
+            password (str, optional): The password for CheckJC. Required.
+        """
+        if not username or not password:
+            raise ValueError("CheckJC username and password must be provided")
+            
+        self.username = username
+        self.password = password
         self.timeout = get_selenium_timeout()
         self.login_url = "https://trainingbnetwork.checkjc.com/login"
         self.driver = None
@@ -41,7 +50,7 @@ class CheckJCClient:
     def __enter__(self):
         """Set up the Chrome driver when entering context."""
         if SIMULATION_MODE:
-            logger.info("Running in simulation mode (Chrome not available)")
+            logger.info(f"Running in simulation mode (Chrome not available) for user {self.username}")
             return self
             
         chrome_options = webdriver.ChromeOptions()
@@ -58,9 +67,9 @@ class CheckJCClient:
         try:
             service = Service(ChromeDriverManager().install())
             self.driver = webdriver.Chrome(service=service, options=chrome_options)
-            logger.info("Chrome driver initialized successfully")
+            logger.info(f"Chrome driver initialized successfully for user {self.username}")
         except Exception as e:
-            error_msg = f"Error initializing Chrome driver: {e}"
+            error_msg = f"Error initializing Chrome driver for user {self.username}: {e}"
             logger.error(error_msg)
             telegram_client.send_message(f"❌ {error_msg}")
             raise
@@ -72,14 +81,14 @@ class CheckJCClient:
         if self.driver:
             try:
                 self.driver.quit()
-                logger.info("Chrome driver closed successfully")
+                logger.info(f"Chrome driver closed successfully for user {self.username}")
             except Exception as e:
-                logger.error(f"Error closing Chrome driver: {e}")
+                logger.error(f"Error closing Chrome driver for user {self.username}: {e}")
     
     def wait_for_element(self, by, value):
         """Wait for an element to be present in the DOM."""
         if SIMULATION_MODE:
-            logger.info(f"Simulation: Wait for element {by}={value}")
+            logger.info(f"Simulation for user {self.username}: Wait for element {by}={value}")
             time.sleep(0.5)  # Simulate wait
             return MockElement()
             
@@ -88,29 +97,29 @@ class CheckJCClient:
                 EC.presence_of_element_located((by, value))
             )
         except TimeoutException:
-            error_msg = f"Timeout waiting for element: {by}={value}"
+            error_msg = f"Timeout waiting for element: {by}={value} for user {self.username}"
             logger.error(error_msg)
             raise TimeoutException(error_msg)
     
     def login(self):
         """Log in to the CheckJC system."""
-        logger.info("Attempting to login to CheckJC")
+        logger.info(f"Attempting to login to CheckJC for user {self.username}")
         
         if SIMULATION_MODE:
             logger.info(f"Simulation: Login with {self.username}")
             time.sleep(1)  # Simulate operation
-            telegram_client.send_message("✅ Simulation: Login to CheckJC successful")
+            telegram_client.send_message(f"✅ Simulation: Login to CheckJC successful for {self.username}")
             return
         
         try:
             self.driver.get(self.login_url)
-            logger.info("Navigated to login page")
+            logger.info(f"Navigated to login page for user {self.username}")
             
             # Find and fill username field
             username_field = self.wait_for_element(By.ID, "username")
             username_field.clear()
             username_field.send_keys(self.username)
-            logger.info("Username entered")
+            logger.info(f"Username entered for {self.username}")
             
             # Find and fill password field
             password_field = self.wait_for_element(By.ID, "password")
@@ -125,85 +134,85 @@ class CheckJCClient:
             
             # Wait for dashboard to load
             self.wait_for_element(By.ID, "dashboard")
-            logger.info("Login successful")
-            telegram_client.send_message("✅ Login to CheckJC successful")
+            logger.info(f"Login successful for user {self.username}")
+            telegram_client.send_message(f"✅ Login to CheckJC successful for {self.username}")
             
         except Exception as e:
-            error_msg = f"Error during login: {e}"
+            error_msg = f"Error during login for user {self.username}: {e}"
             logger.error(error_msg)
             telegram_client.send_message(f"❌ {error_msg}")
             raise
     
     def check_in(self):
         """Perform check-in operation."""
-        logger.info("Performing check-in")
+        logger.info(f"Performing check-in for user {self.username}")
         
         if SIMULATION_MODE:
             # Simulate successful check-in
             time.sleep(1)
             current_time = datetime.now().strftime("%H:%M:%S")
-            logger.info(f"Simulation: Check-in at {current_time}")
-            telegram_client.send_message(f"✅ Simulation: Check-in completed at {current_time}")
+            logger.info(f"Simulation: Check-in at {current_time} for user {self.username}")
+            telegram_client.send_message(f"✅ Simulation: Check-in completed at {current_time} for user {self.username}")
             return
         
         try:
             # Navigate to check-in page
             check_button = self.wait_for_element(By.ID, "check-in-button")
             check_button.click()
-            logger.info("Check-in button clicked")
+            logger.info(f"Check-in button clicked for user {self.username}")
             
             # Confirm check-in
             confirm_button = self.wait_for_element(By.ID, "confirm-check")
             confirm_button.click()
-            logger.info("Confirm button clicked")
+            logger.info(f"Confirm button clicked for user {self.username}")
             
             # Wait for success message
             self.wait_for_element(By.CLASS_NAME, "success-message")
-            logger.info("Check-in successful")
+            logger.info(f"Check-in successful for user {self.username}")
             
             # Get current time for the message
             current_time = datetime.now().strftime("%H:%M:%S")
-            telegram_client.send_message(f"✅ Check-in completed at {current_time}")
+            telegram_client.send_message(f"✅ Check-in completed at {current_time} for user {self.username}")
             
         except Exception as e:
-            error_msg = f"Error during check-in: {e}"
+            error_msg = f"Error during check-in for user {self.username}: {e}"
             logger.error(error_msg)
             telegram_client.send_message(f"❌ {error_msg}")
             raise
     
     def check_out(self):
         """Perform check-out operation."""
-        logger.info("Performing check-out")
+        logger.info(f"Performing check-out for user {self.username}")
         
         if SIMULATION_MODE:
             # Simulate successful check-out
             time.sleep(1)
             current_time = datetime.now().strftime("%H:%M:%S")
-            logger.info(f"Simulation: Check-out at {current_time}")
-            telegram_client.send_message(f"✅ Simulation: Check-out completed at {current_time}")
+            logger.info(f"Simulation: Check-out at {current_time} for user {self.username}")
+            telegram_client.send_message(f"✅ Simulation: Check-out completed at {current_time} for user {self.username}")
             return
         
         try:
             # Navigate to check-out page
             check_button = self.wait_for_element(By.ID, "check-out-button")
             check_button.click()
-            logger.info("Check-out button clicked")
+            logger.info(f"Check-out button clicked for user {self.username}")
             
             # Confirm check-out
             confirm_button = self.wait_for_element(By.ID, "confirm-check")
             confirm_button.click()
-            logger.info("Confirm button clicked")
+            logger.info(f"Confirm button clicked for user {self.username}")
             
             # Wait for success message
             self.wait_for_element(By.CLASS_NAME, "success-message")
-            logger.info("Check-out successful")
+            logger.info(f"Check-out successful for user {self.username}")
             
             # Get current time for the message
             current_time = datetime.now().strftime("%H:%M:%S")
-            telegram_client.send_message(f"✅ Check-out completed at {current_time}")
+            telegram_client.send_message(f"✅ Check-out completed at {current_time} for user {self.username}")
             
         except Exception as e:
-            error_msg = f"Error during check-out: {e}"
+            error_msg = f"Error during check-out for user {self.username}: {e}"
             logger.error(error_msg)
             telegram_client.send_message(f"❌ {error_msg}")
             raise

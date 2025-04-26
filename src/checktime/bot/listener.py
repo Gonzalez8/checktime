@@ -1,25 +1,80 @@
+"""
+Telegram bot listener for CheckTime application.
+"""
+
 import time
+import logging
+import re
 from datetime import datetime
 from typing import Optional, Dict, Any
 
 from checktime.utils.logger import bot_logger, error_logger
 from checktime.utils.telegram import TelegramClient
 from checktime.shared.services.holiday_manager import HolidayManager
+from checktime.shared.repository import holiday_repository, user_repository
+from checktime.shared.config import get_telegram_token
+from checktime.web import create_app
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("/var/log/checktime/bot.log"),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# Initialize Telegram client
+telegram_client = TelegramClient()
+
+# Create Flask app
+app = create_app()
+
+# Command pattern for adding a holiday
+ADD_HOLIDAY_PATTERN = r'/addfestivo\s+(\d{4}-\d{2}-\d{2})(?:\s+(.+))?'
+# Command pattern for deleting a holiday
+DELETE_HOLIDAY_PATTERN = r'/delfestivo\s+(\d{4}-\d{2}-\d{2})'
+# Command for listing holidays
+LIST_HOLIDAYS_COMMAND = '/listfestivos'
+# Command for getting chat ID
+GET_CHAT_ID_COMMAND = '/getchatid'
 
 class TelegramBotListener:
     """Client for listening and processing Telegram commands."""
     
-    def __init__(self, telegram_client: Optional[TelegramClient] = None, holiday_manager: Optional[HolidayManager] = None):
+    def __init__(self, telegram_client: Optional[TelegramClient] = None):
         """
         Initialize the Telegram listener.
         
         Args:
             telegram_client (Optional[TelegramClient]): Telegram client
-            holiday_manager (Optional[HolidayManager]): Holiday manager
         """
         self.telegram = telegram_client or TelegramClient()
-        self.holiday_manager = holiday_manager or HolidayManager()
+        self.user_repo = user_repository
+        self.holiday_repo = holiday_repository
         self.last_update_id = None
+    
+    def get_user_by_chat_id(self, chat_id: str):
+        """
+        Get user by Telegram chat ID.
+        
+        Args:
+            chat_id (str): Telegram chat ID
+            
+        Returns:
+            User or None: User object if found, None otherwise
+        """
+        # Get all users with Telegram configured
+        users = self.user_repo.get_all_with_telegram_configured()
+        
+        # Find the user with matching chat ID
+        for user in users:
+            if str(user.telegram_chat_id) == str(chat_id):
+                return user
+                
+        return None
     
     def process_command(self, message: Dict[str, Any]) -> None:
         """
@@ -28,119 +83,174 @@ class TelegramBotListener:
         Args:
             message (Dict[str, Any]): Received message
         """
-        chat_id = message["chat"]["id"]
+        chat_id = str(message["chat"]["id"])
         text = message.get("text", "").strip()
         
-        if str(chat_id) != self.telegram.chat_id:
-            bot_logger.warning(f"Message ignored from unauthorized chat: {chat_id}")
+        bot_logger.info(f"Command received from {chat_id}: {text}")
+        
+        # Process /getchatid command - this works for all users
+        if text == GET_CHAT_ID_COMMAND:
+            response = f"Your Telegram Chat ID is: `{chat_id}`\n\nCopy this ID and paste it in your user profile to receive notifications."
+            self.telegram.send_message(response, chat_id)
             return
         
-        bot_logger.info(f"Command received: {text}")
-        
-        if text.startswith("/addfestivo"):
-            parts = text.split(None, 2)  # Split into command, date, and description (if present)
-            if len(parts) >= 2:
-                date = parts[1]
-                description = parts[2] if len(parts) > 2 else None
-                self.add_holiday(date, description)
-            else:
-                self.telegram.send_message("❌ Usage: `/addfestivo YYYY-MM-DD [description]`")
-        
-        elif text.startswith("/delfestivo"):
-            parts = text.split()
-            if len(parts) == 2:
-                self.remove_holiday(parts[1])
-            else:
-                self.telegram.send_message("❌ Usage: `/delfestivo YYYY-MM-DD`")
-        
-        elif text == "/listfestivos":
-            self.list_holidays()
-        
-        else:
-            bot_logger.warning(f"Command not recognized: {text}")
-            self.telegram.send_message("❓ Command not recognized. Use `/addfestivo`, `/delfestivo` or `/listfestivos`.")
-    
-    def add_holiday(self, date: str, description: Optional[str] = None) -> None:
-        """
-        Add a holiday.
-        
-        Args:
-            date (str): Date in YYYY-MM-DD format
-            description (Optional[str]): Holiday description
-        """
-        try:
-            # Validate date format
-            try:
-                date_obj = datetime.strptime(date, "%Y-%m-%d").date()
-            except ValueError:
-                self.telegram.send_message("❌ Invalid format. Use: `/addfestivo YYYY-MM-DD [description]`")
+        # For commands that require authentication, find the user
+        with app.app_context():
+            user = self.get_user_by_chat_id(chat_id)
+            if not user:
+                bot_logger.warning(f"Message ignored from unauthorized chat: {chat_id}")
+                self.telegram.send_message("You are not authorized to use this bot. Please register or update your profile at CheckTime web interface with this chat ID.", chat_id)
                 return
             
-            # Use the holiday manager to save
-            success = self.holiday_manager.save_holiday(date, description)
+            bot_logger.info(f"User {user.username} (ID: {user.id}) identified for chat ID {chat_id}")
+            
+            # Process /addfestivo command
+            date, description = self.parse_add_holiday_command(text)
+            if date and description:
+                self.add_holiday(date, description, user)
+                return
+            
+            # Process /delfestivo command
+            date = self.parse_delete_holiday_command(text)
+            if date:
+                self.remove_holiday(date, user)
+                return
+            
+            # Process /listfestivos command
+            if text == LIST_HOLIDAYS_COMMAND:
+                self.list_holidays(user)
+                return
+            
+            # Unknown command
+            if text.startswith('/'):
+                self.telegram.send_message(
+                    f"Hello {user.username}!\n\n"
+                    "Available commands:\n"
+                    "/getchatid - Get your Telegram chat ID\n"
+                    "/addfestivo YYYY-MM-DD [description] - Add a holiday\n"
+                    "/delfestivo YYYY-MM-DD - Delete a holiday\n"
+                    "/listfestivos - List upcoming holidays", 
+                    chat_id
+                )
+                return
+    
+    def parse_add_holiday_command(self, text):
+        """Parse add holiday command text."""
+        match = re.match(ADD_HOLIDAY_PATTERN, text)
+        if match:
+            date_str = match.group(1)
+            description = match.group(2) or f"Holiday on {date_str}"
+            try:
+                date = datetime.strptime(date_str, "%Y-%m-%d").date()
+                return date, description
+            except ValueError:
+                return None, None
+        return None, None
+    
+    def parse_delete_holiday_command(self, text):
+        """Parse delete holiday command text."""
+        match = re.match(DELETE_HOLIDAY_PATTERN, text)
+        if match:
+            date_str = match.group(1)
+            try:
+                date = datetime.strptime(date_str, "%Y-%m-%d").date()
+                return date
+            except ValueError:
+                return None
+        return None
+    
+    def add_holiday(self, date: datetime.date, description: Optional[str] = None, user = None) -> None:
+        """
+        Add a holiday for a specific user.
+        
+        Args:
+            date (datetime.date): Holiday date
+            description (Optional[str]): Holiday description
+            user: User object
+        """
+        try:
+            date_str = date.strftime("%Y-%m-%d")
+            chat_id = user.telegram_chat_id
+            
+            with app.app_context():
+                # Create a holiday manager for this user
+                holiday_manager = HolidayManager(user.id)
+                
+                # Add the holiday using the manager
+                success = holiday_manager.add_holiday(date_str, description, user.id)
             
             if success:
-                self.telegram.send_message(f"✅ Holiday added: {date}")
+                    self.telegram.send_message(f"✅ Holiday added: {date_str}", chat_id)
             else:
-                self.telegram.send_message(f"⚠️ Holiday {date} already exists.")
+                    self.telegram.send_message(f"⚠️ Holiday {date_str} already exists.", chat_id)
             
         except Exception as e:
             error_msg = f"Error adding holiday: {e}"
             error_logger.error(error_msg)
-            self.telegram.send_message(f"❌ {error_msg}")
+            self.telegram.send_message(f"❌ {error_msg}", user.telegram_chat_id if user else None)
     
-    def remove_holiday(self, date: str) -> None:
+    def remove_holiday(self, date: datetime.date, user = None) -> None:
         """
-        Remove a holiday.
+        Remove a holiday for a specific user.
         
         Args:
-            date (str): Date in YYYY-MM-DD format
+            date (datetime.date): Holiday date
+            user: User object
         """
         try:
-            # Validate date format
-            try:
-                date_obj = datetime.strptime(date, "%Y-%m-%d").date()
-            except ValueError:
-                self.telegram.send_message("❌ Invalid format. Use: `/delfestivo YYYY-MM-DD`")
-                return
+            date_str = date.strftime("%Y-%m-%d")
+            chat_id = user.telegram_chat_id
             
-            # Use the holiday manager to delete
-            success = self.holiday_manager.delete_holiday(date)
+            with app.app_context():
+                # Create a holiday manager for this user
+                holiday_manager = HolidayManager(user.id)
+                
+                # Delete the holiday using the manager
+                success = holiday_manager.delete_holiday(date_str, user.id)
             
             if success:
-                self.telegram.send_message(f"✅ Holiday removed: {date}")
+                    self.telegram.send_message(f"✅ Holiday removed: {date_str}", chat_id)
             else:
-                self.telegram.send_message(f"⚠️ Holiday {date} does not exist.")
+                    self.telegram.send_message(f"⚠️ Holiday {date_str} does not exist.", chat_id)
             
         except Exception as e:
             error_msg = f"Error removing holiday: {e}"
             error_logger.error(error_msg)
-            self.telegram.send_message(f"❌ {error_msg}")
+            self.telegram.send_message(f"❌ {error_msg}", user.telegram_chat_id if user else None)
     
-    def list_holidays(self) -> None:
-        """List upcoming holidays for the year."""
+    def list_holidays(self, user = None) -> None:
+        """
+        List upcoming holidays for a specific user.
+        
+        Args:
+            user: User object
+        """
         try:
-            current_date = datetime.now().date()
-            current_year = current_date.year
+            chat_id = user.telegram_chat_id
             
-            # Use the holiday manager to get upcoming holidays
-            upcoming_holidays = self.holiday_manager.get_upcoming_holidays()
+            with app.app_context():
+                # Create a holiday manager for this user
+                holiday_manager = HolidayManager(user.id)
+                
+                # Get upcoming holidays for this user
+                upcoming_holidays = holiday_manager.get_upcoming_holidays(user.id)
             
             if not upcoming_holidays:
-                self.telegram.send_message("📅 No upcoming holidays for this year.")
+                self.telegram.send_message("📅 No upcoming holidays.", chat_id)
                 return
             
             # Create the message
-            message = f"📅 *Upcoming holidays for {current_year}:*\n"
+            message = f"📅 *Upcoming holidays for {user.username}:*\n"
             for date_str, desc, days_remaining in upcoming_holidays:
                 day_text = "today" if days_remaining == 0 else f"in {days_remaining} day{'s' if days_remaining != 1 else ''}"
                 message += f"- {date_str} ({desc}): {day_text}\n"
             
-            self.telegram.send_message(message)
+            self.telegram.send_message(message, chat_id)
+            
         except Exception as e:
             error_msg = f"Error listing holidays: {e}"
             error_logger.error(error_msg)
-            self.telegram.send_message(f"❌ {error_msg}")
+            self.telegram.send_message(f"❌ {error_msg}", user.telegram_chat_id if user else None)
     
     def listen(self) -> None:
         """Listen for and process Telegram commands."""
@@ -173,6 +283,11 @@ def main():
     bot_logger.info("Starting Telegram bot")
     
     try:
+        token = get_telegram_token()
+        if not token:
+            bot_logger.error("Telegram token not configured. Bot cannot start.")
+            return
+        
         listener = TelegramBotListener()
         listener.listen()
     except Exception as e:

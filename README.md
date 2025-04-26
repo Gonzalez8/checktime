@@ -6,7 +6,9 @@ An application for automating check-in and check-out on the CheckJC system.
 
 - Automated check-in and check-out on working days
 - Automatic detection of weekends and holidays
-- Telegram integration for notifications and commands
+- Support for multiple users with individual schedules and credentials
+- User profiles with CheckJC credential management
+- Personalized Telegram notifications for each user
 - Web interface to configure schedules and holidays
 
 ## Screenshots
@@ -17,6 +19,12 @@ The main dashboard displays a monthly calendar with daily check-in and check-out
 
 ![Dashboard Stats View](docs/screenshots/dashboard-stats.png)
 The dashboard also shows current schedule, upcoming holidays, active schedule periods, and statistics.
+
+### User Management
+Users can manage their own CheckJC credentials and preferences through their profile page. 
+This allows each user to configure their own check-in/check-out automation.
+
+Each user can also set up their own Telegram notifications to receive alerts about their check-in/out operations.
 
 ### Holiday Management
 ![Holiday Import](docs/screenshots/holiday-import.png)
@@ -31,7 +39,7 @@ Edit daily schedules with an intuitive interface.
 CheckTime is organized into three independent services, each with a single responsibility:
 
 1. **Web Service**: Provides the web user interface for system administration
-2. **Scheduler Service**: Performs automatic clock-in/clock-out according to configured schedules
+2. **Scheduler Service**: Performs automatic clock-in/clock-out according to configured schedules for all users
 3. **Bot Service**: Handles Telegram integration for notifications and commands
 
 All services connect to a PostgreSQL database for persistent storage of schedules, holidays, and configuration.
@@ -41,45 +49,96 @@ This separation ensures greater stability, maintainability, and scalability of t
 ## Services Explained
 
 ### Web Service
-The web interface provides an intuitive dashboard for administrators to:
+The web interface provides an intuitive dashboard for users to:
 - View current configuration and system status
 - Manage holidays (add individual days or date ranges)
 - Configure schedule periods (e.g., summer schedule, winter schedule)
 - Set check-in/check-out times for each day of the week
-- Synchronize holiday data between database and scheduler service
+- Manage their CheckJC credentials securely
+- Configure personal Telegram notifications
+- Enable/disable automatic check-in/out for their account
+- Update their profile information and password
 
 ### Scheduler Service
 This service handles the automation of clock-in/clock-out actions:
+- Supports multiple users with individual schedules and check-in/out times
 - Runs according to the schedules configured in the web interface
+- Uses separate threads for each user's check-in/out operations
 - Automatically detects and skips weekends and holidays
 - Uses a Chrome webdriver to interact with the CheckJC system
 - Logs all actions for auditing and troubleshooting
-- Sends notifications of successful or failed check-ins via Telegram
+- Sends personalized notifications to each user via Telegram
 
 ### Bot Service
 The Telegram bot provides remote management capabilities:
 - Allows holiday management directly from your phone
-- Sends notifications about check-in/check-out events
+- Sends personalized notifications about check-in/check-out events
 - Provides status updates about the system
 - Allows administrators to add, remove, or list holidays remotely
+- Supports individual user chat IDs for personalized notifications
 
 ### Database
 Uses PostgreSQL to store:
+- User accounts with securely encrypted passwords
+- CheckJC credentials (stored securely for each user)
+- Telegram configuration (chat ID and notification preferences)
 - Holiday information (date and description)
 - Schedule periods and their date ranges
 - Daily check-in/check-out times for each schedule period
-- User accounts and authentication data
+- User-specific preferences and settings
 
-## Telegram Commands
+## Multi-User Support
 
+CheckTime now supports multiple users, each with their own:
+- CheckJC credentials (securely stored)
+- Telegram notifications configuration
+- Schedule periods and daily check-in/out times
+- Holiday management
+- Account preferences
+
+The system ensures that each user's check-in/out operations are performed securely and independently, and notifications are sent accordingly.
+
+## User Registration and Profile Management
+
+### Registration
+New users can:
+- Create an account with a unique username and email
+- Optionally configure their CheckJC credentials during registration
+- Optionally configure their Telegram notifications during registration
+- Enable or disable automatic check-in/out
+
+### User Profile
+Users can manage their profile including:
+- Update personal information (username, email)
+- Change their password securely
+- Configure or update their CheckJC credentials
+- Set up Telegram notifications with their personal chat ID
+- Enable or disable automatic check-in/out
+
+## Telegram Integration
+
+CheckTime now supports personalized Telegram notifications for each user:
+
+### Setting Up Telegram
+1. Each user can set up their own Telegram chat ID in their profile
+2. The system will send notifications only to users who have configured their Telegram settings
+3. Users can enable or disable notifications at any time
+
+### Automatic Notifications
+The system sends personalized notifications for:
+- Successful check-ins and check-outs
+- Failed check-in/out attempts
+- System status updates
+- Important events like holidays and schedule changes
+
+### Commands
 The following commands are available in the Telegram bot:
 
+- `/getchatid` - Get your Telegram chat ID for configuration
 - `/addfestivo YYYY-MM-DD [description]` - Add a new holiday date with optional description
   Example: `/addfestivo 2023-12-25 Christmas Day`
-
 - `/delfestivo YYYY-MM-DD` - Delete a holiday date
   Example: `/delfestivo 2023-12-25`
-
 - `/listfestivos` - List upcoming holidays for the current year
   Shows dates, descriptions, and how many days until each holiday
 
@@ -99,18 +158,18 @@ The following commands are available in the Telegram bot:
 
 2. Edit the `.env` file with your credentials and configuration:
    ```
-   # Credentials
-   CHECKJC_USERNAME=your_username
-   CHECKJC_PASSWORD=your_password
+   # Admin credentials (for initial setup)
+   ADMIN_PASSWORD=admin_password
    
-   # Telegram (optional)
+   # Telegram Bot (for global alerts and the bot service)
    TELEGRAM_BOT_TOKEN=your_token
-   TELEGRAM_CHAT_ID=your_chat_id
+   TELEGRAM_CHAT_ID=default_chat_id  # For system notifications
    
    # Web Configuration
    FLASK_SECRET_KEY=flask_secret_key
-   ADMIN_PASSWORD=admin_password
    ```
+
+   Note: Individual user CheckJC credentials and Telegram chat IDs are now stored in the database, not in environment variables.
 
 ## Installation and Execution
 
@@ -159,11 +218,17 @@ The following commands are available in the Telegram bot:
 
 1. Access http://localhost:5000
 2. Log in with username `admin` and the password configured in `ADMIN_PASSWORD`
-3. From the dashboard you can:
+3. New users can register and configure their own CheckJC credentials and Telegram settings
+4. From the dashboard you can:
    - View summary of current configuration
    - Manage holidays
    - Configure schedule periods
    - Set check-in/check-out times for each day of the week
+5. From the user profile page, you can:
+   - Update your account information
+   - Configure your CheckJC credentials
+   - Set up Telegram notifications
+   - Enable or disable automatic check-in/out
 
 ## License
 
