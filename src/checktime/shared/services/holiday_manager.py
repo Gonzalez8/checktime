@@ -155,7 +155,7 @@ class HolidayManager:
             # Filter to show only upcoming holidays
             upcoming = []
             for holiday in holidays:
-                if holiday.date >= current_date and holiday.date.year == current_year:
+                if holiday.date >= current_date:
                     # Calculate days_remaining and add it as an attribute to the holiday object
                     days_remaining = (holiday.date - current_date).days
                     holiday.days_remaining = days_remaining
