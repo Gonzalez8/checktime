@@ -72,6 +72,80 @@ class UserManager:
             logger.error(error_msg)
             return None
     
+    def create_user(self, username: str, email: str, password: str, is_admin: bool = False) -> Optional[User]:
+        """
+        Create a new user.
+        
+        Args:
+            username (str): Username for the new user
+            email (str): Email for the new user
+            password (str): Password for the new user
+            is_admin (bool, optional): Whether the user is an admin. Defaults to False.
+            
+        Returns:
+            User or None: Created user object if successful, None otherwise
+        """
+        try:
+            # Check if username already exists
+            existing_user = self.get_by_username(username)
+            if existing_user:
+                logger.warning(f"Username {username} already exists")
+                return None
+                
+            # Check if email already exists
+            existing_email = self.get_by_email(email)
+            if existing_email:
+                logger.warning(f"Email {email} already exists")
+                return None
+                
+            # Create new user
+            user = self.repository.create_user(username, email, password, is_admin)
+            logger.info(f"Created new user: {username}")
+            return user
+        except Exception as e:
+            error_msg = f"Error creating user: {e}"
+            logger.error(error_msg)
+            return None
+    
+    def update_user(self, user: User, username: str = None, email: str = None, 
+                  password: str = None, is_admin: bool = None) -> Optional[User]:
+        """
+        Update an existing user.
+        
+        Args:
+            user (User): The user to update
+            username (str, optional): New username. Defaults to None.
+            email (str, optional): New email. Defaults to None.
+            password (str, optional): New password. Defaults to None.
+            is_admin (bool, optional): Admin status. Defaults to None.
+            
+        Returns:
+            User or None: Updated user object if successful, None otherwise
+        """
+        try:
+            # Check if new username already exists
+            if username and username != user.username:
+                existing_user = self.get_by_username(username)
+                if existing_user and existing_user.id != user.id:
+                    logger.warning(f"Username {username} already exists")
+                    return None
+                    
+            # Check if new email already exists
+            if email and email != user.email:
+                existing_email = self.get_by_email(email)
+                if existing_email and existing_email.id != user.id:
+                    logger.warning(f"Email {email} already exists")
+                    return None
+                    
+            # Update user
+            updated_user = self.repository.update_user(user, username, email, password, is_admin)
+            logger.info(f"Updated user: {user.username}")
+            return updated_user
+        except Exception as e:
+            error_msg = f"Error updating user: {e}"
+            logger.error(error_msg)
+            return None
+    
     def get_all_with_checkjc_configured(self) -> List[User]:
         """
         Get all users who have CheckJC configured and enabled for automatic check-in.
