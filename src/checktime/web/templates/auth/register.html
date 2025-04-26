@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+
+{% block title %}{{ _('register') }} - {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0"><i class="bi bi-person-plus"></i> {{ _('register') }}</h4>
+            </div>
+            <div class="card-body">
+                <form method="post" action="{{ url_for('auth.register') }}">
+                    {{ form.hidden_tag() }}
+                    
+                    <h5 class="mb-3">{{ _('account_info') }}</h5>
+                    
+                    <div class="mb-3">
+                        <label for="username" class="form-label">{{ _('username') }} *</label>
+                        {{ form.username(class="form-control", id="username", placeholder=_('enter_username')) }}
+                        {% for error in form.username.errors %}
+                        <div class="text-danger">{{ error }}</div>
+                        {% endfor %}
+                    </div>
+                    <div class="mb-3">
+                        <label for="email" class="form-label">{{ _('email') }} *</label>
+                        {{ form.email(class="form-control", id="email", placeholder=_('enter_email')) }}
+                        {% for error in form.email.errors %}
+                        <div class="text-danger">{{ error }}</div>
+                        {% endfor %}
+                    </div>
+                    <div class="mb-3">
+                        <label for="password" class="form-label">{{ _('password') }} *</label>
+                        {{ form.password(class="form-control", id="password", placeholder=_('enter_password')) }}
+                        {% for error in form.password.errors %}
+                        <div class="text-danger">{{ error }}</div>
+                        {% endfor %}
+                    </div>
+                    <div class="mb-3">
+                        <label for="password2" class="form-label">{{ _('confirm_password') }} *</label>
+                        {{ form.password2(class="form-control", id="password2", placeholder=_('confirm_password')) }}
+                        {% for error in form.password2.errors %}
+                        <div class="text-danger">{{ error }}</div>
+                        {% endfor %}
+                    </div>
+                    
+                    <hr class="my-4">
+                    
+                    <h5 class="mb-3">{{ _('checkjc_credentials') }} ({{ _('optional') }})</h5>
+                    <p class="text-muted small mb-3">{{ _('checkjc_info_text') }}</p>
+                    
+                    <div class="mb-3">
+                        <label for="checkjc_username" class="form-label">{{ _('checkjc_username') }}</label>
+                        {{ form.checkjc_username(class="form-control", id="checkjc_username", placeholder=_('enter_checkjc_username')) }}
+                        {% for error in form.checkjc_username.errors %}
+                        <div class="text-danger">{{ error }}</div>
+                        {% endfor %}
+                    </div>
+                    <div class="mb-3">
+                        <label for="checkjc_password" class="form-label">{{ _('checkjc_password') }}</label>
+                        {{ form.checkjc_password(class="form-control", id="checkjc_password", placeholder=_('enter_checkjc_password')) }}
+                        {% for error in form.checkjc_password.errors %}
+                        <div class="text-danger">{{ error }}</div>
+                        {% endfor %}
+                    </div>
+                    <div class="mb-3 form-check">
+                        {{ form.auto_checkin_enabled(class="form-check-input", id="auto_checkin_enabled") }}
+                        <label class="form-check-label" for="auto_checkin_enabled">{{ _('enable_auto_checkin') }}</label>
+                    </div>
+                    
+                    <hr class="my-4">
+                    
+                    <h5 class="mb-3">{{ _('telegram_settings') }} ({{ _('optional') }})</h5>
+                    <p class="text-muted small mb-3">{{ _('telegram_info_text') }}</p>
+                    
+                    <div class="mb-3">
+                        <label for="telegram_chat_id" class="form-label">{{ _('telegram_chat_id') }}</label>
+                        {{ form.telegram_chat_id(class="form-control", id="telegram_chat_id", placeholder=_('enter_telegram_chat_id')) }}
+                        {% for error in form.telegram_chat_id.errors %}
+                        <div class="text-danger">{{ error }}</div>
+                        {% endfor %}
+                        <div class="form-text">{{ _('telegram_chat_id_help') }}</div>
+                    </div>
+                    <div class="mb-3 form-check">
+                        {{ form.telegram_notifications_enabled(class="form-check-input", id="telegram_notifications_enabled") }}
+                        <label class="form-check-label" for="telegram_notifications_enabled">{{ _('enable_telegram_notifications') }}</label>
+                    </div>
+                    
+                    <div class="alert alert-info">
+                        <h6 class="mb-2"><i class="bi bi-info-circle me-2"></i> {{ _('how_to_get_telegram_chat_id') }}</h6>
+                        <ol class="mb-0">
+                            <li>{{ _('telegram_chat_id_step1') }}</li>
+                            <li>{{ _('telegram_chat_id_step2') }}</li>
+                            <li>{{ _('telegram_chat_id_step3') }}</li>
+                            <li>{{ _('telegram_chat_id_step4') }}</li>
+                        </ol>
+                    </div>
+                    
+                    <div class="d-grid gap-2 mt-4">
+                        <button type="submit" class="btn btn-primary">{{ _('register') }}</button>
+                    </div>
+                    <div class="mt-3 text-center">
+                        <a href="{{ url_for('auth.login') }}">{{ _('already_have_account') }}</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

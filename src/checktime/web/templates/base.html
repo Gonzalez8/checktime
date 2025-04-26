@@ -51,7 +51,7 @@
     <!-- Navigation Bar -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary fixed-top">
         <div class="container">
-            <a class="navbar-brand" href="{{ url_for('dashboard.index') }}">
+            <a class="navbar-brand" href="{{ url_for('home') }}">
                 <i class="bi bi-clock"></i> {{ _('app_name') }}
             </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
@@ -108,12 +108,31 @@
                             <i class="bi bi-person-circle"></i> {{ current_user.username }}
                         </a>
                         <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="navbarDropdown">
-                            <li><a class="dropdown-item" href="{{ url_for('auth.logout') }}">{{ _('logout') }}</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('auth.profile') }}">
+                                <i class="bi bi-person"></i> {{ _('profile') }}
+                            </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('auth.profile') }}#checkjc-config">
+                                <i class="bi bi-clock"></i> {{ _('checkjc_config') }}
+                            </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('auth.profile') }}#telegram-config">
+                                <i class="bi bi-telegram"></i> {{ _('telegram_config') }}
+                            </a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="{{ url_for('auth.logout') }}">
+                                <i class="bi bi-box-arrow-right"></i> {{ _('logout') }}
+                            </a></li>
                         </ul>
                     </li>
                     {% else %}
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('auth.login') }}">{{ _('login') }}</a>
+                        <a class="nav-link {% if request.endpoint == 'auth.login' %}active{% endif %}" href="{{ url_for('auth.login') }}">
+                            <i class="bi bi-box-arrow-in-right"></i> {{ _('login') }}
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint == 'auth.register' %}active{% endif %}" href="{{ url_for('auth.register') }}">
+                            <i class="bi bi-person-plus"></i> {{ _('register') }}
+                        </a>
                     </li>
                     {% endif %}
                 </ul>

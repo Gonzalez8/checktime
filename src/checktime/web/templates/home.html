@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block title %}{{ _('welcome') }} - {{ super() }}{% endblock %}
+
+{% block styles %}
+<style>
+    .hero-section {
+        background-color: #f8f9fa;
+        padding: 80px 0;
+        margin-bottom: 30px;
+        border-radius: 10px;
+    }
+    
+    .feature-box {
+        padding: 30px;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        height: 100%;
+        transition: transform 0.3s;
+    }
+    
+    .feature-box:hover {
+        transform: translateY(-5px);
+    }
+    
+    .feature-icon {
+        font-size: 2.5rem;
+        margin-bottom: 15px;
+        color: #0d6efd;
+    }
+    
+    .cta-button {
+        padding: 10px 30px;
+        font-size: 1.2rem;
+        margin: 5px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<div class="hero-section text-center">
+    <div class="container">
+        <h1 class="display-4">{{ _('app_name') }}</h1>
+        <p class="lead">{{ _('app_description', 'Manage your work schedules and automate check-ins with ease') }}</p>
+        <div class="mt-5">
+            <a href="{{ url_for('auth.login') }}" class="btn btn-primary cta-button">
+                <i class="bi bi-box-arrow-in-right"></i> {{ _('login') }}
+            </a>
+            <a href="{{ url_for('auth.register') }}" class="btn btn-outline-primary cta-button">
+                <i class="bi bi-person-plus"></i> {{ _('register') }}
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Features Section -->
+<div class="container">
+    <h2 class="text-center mb-5">{{ _('features', 'Features') }}</h2>
+    <div class="row">
+        <div class="col-md-4 mb-4">
+            <div class="feature-box bg-white">
+                <div class="text-center">
+                    <i class="bi bi-calendar-check feature-icon"></i>
+                    <h3>{{ _('schedule_management', 'Schedule Management') }}</h3>
+                </div>
+                <p>{{ _('schedule_description', 'Create and manage your work schedules with our intuitive interface.') }}</p>
+            </div>
+        </div>
+        <div class="col-md-4 mb-4">
+            <div class="feature-box bg-white">
+                <div class="text-center">
+                    <i class="bi bi-clock-history feature-icon"></i>
+                    <h3>{{ _('automated_checkins', 'Automated Check-ins') }}</h3>
+                </div>
+                <p>{{ _('automation_description', 'Automate your check-ins and check-outs based on your schedule.') }}</p>
+            </div>
+        </div>
+        <div class="col-md-4 mb-4">
+            <div class="feature-box bg-white">
+                <div class="text-center">
+                    <i class="bi bi-calendar-event feature-icon"></i>
+                    <h3>{{ _('holiday_tracking', 'Holiday Tracking') }}</h3>
+                </div>
+                <p>{{ _('holiday_description', 'Keep track of holidays and special dates to adjust your work schedule.') }}</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Call to Action -->
+<div class="container text-center my-5">
+    <h2>{{ _('get_started_today', 'Get Started Today!') }}</h2>
+    <p class="lead mb-4">{{ _('cta_description', 'Join CheckTime and simplify your work scheduling and time tracking.') }}</p>
+    <a href="{{ url_for('auth.register') }}" class="btn btn-primary cta-button">
+        <i class="bi bi-person-plus"></i> {{ _('register_now', 'Register Now') }}
+    </a>
+</div>
+{% endblock %} 

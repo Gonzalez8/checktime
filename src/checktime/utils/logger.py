@@ -1,77 +1,77 @@
-import logging
+"""
+Logging configuration for CheckTime application.
+"""
+
 import os
+import logging
 from logging.handlers import RotatingFileHandler
-from ..config.settings import (
-    LOG_FILE,
-    ERROR_LOG_FILE,
-    LOG_FORMAT,
-    LOG_DATE_FORMAT,
-    LOG_MAX_BYTES,
-    LOG_BACKUP_COUNT
+from pathlib import Path
+
+from checktime.shared.config import get_log_level, get_log_date_format
+
+# Log directory
+LOG_DIR = Path('/var/log/checktime')
+LOG_DIR.mkdir(exist_ok=True)
+
+# Log files
+BOT_LOG_FILE = LOG_DIR / 'bot.log'
+WEB_LOG_FILE = LOG_DIR / 'web.log'
+SCHEDULER_LOG_FILE = LOG_DIR / 'scheduler.log'
+ERROR_LOG_FILE = LOG_DIR / 'error.log'
+
+# Log format
+LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+DATE_FORMAT = get_log_date_format()
+LOG_MAX_BYTES = 1024 * 1024  # 1MB
+LOG_BACKUP_COUNT = 5
+
+# Configure root logger
+logging.basicConfig(
+    level=getattr(logging, get_log_level()),
+    format=LOG_FORMAT,
+    datefmt=DATE_FORMAT,
+    handlers=[
+        logging.StreamHandler()
+    ]
 )
 
-# Asegurar que el directorio de logs existe
-os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+# Create and configure bot logger
+bot_logger = logging.getLogger('checktime.bot')
+bot_handler = RotatingFileHandler(
+    BOT_LOG_FILE,
+    maxBytes=LOG_MAX_BYTES,
+    backupCount=LOG_BACKUP_COUNT
+)
+bot_handler.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=DATE_FORMAT))
+bot_logger.addHandler(bot_handler)
 
-class LoggerFactory:
-    """Factory para crear loggers con configuración consistente."""
-    
-    @staticmethod
-    def create_logger(name, log_file=LOG_FILE, level=logging.INFO):
-        """
-        Crea y configura un logger.
-        
-        Args:
-            name (str): Nombre del logger
-            log_file (str): Ruta al archivo de log
-            level (int): Nivel de logging
-        
-        Returns:
-            logging.Logger: Logger configurado
-        """
-        logger = logging.getLogger(name)
-        logger.setLevel(level)
-        
-        # Evitar duplicación de handlers
-        if logger.handlers:
-            return logger
-        
-        # Formato del log
-        formatter = logging.Formatter(
-            LOG_FORMAT,
-            datefmt=LOG_DATE_FORMAT
-        )
-        
-        # Handler para archivo
-        file_handler = RotatingFileHandler(
-            log_file,
-            maxBytes=LOG_MAX_BYTES,
-            backupCount=LOG_BACKUP_COUNT
-        )
-        file_handler.setFormatter(formatter)
-        logger.addHandler(file_handler)
-        
-        # Handler para consola
-        console_handler = logging.StreamHandler()
-        console_handler.setFormatter(formatter)
-        logger.addHandler(console_handler)
-        
-        return logger
-    
-    @staticmethod
-    def create_error_logger(name):
-        """
-        Crea un logger específico para errores.
-        
-        Args:
-            name (str): Nombre del logger
-        
-        Returns:
-            logging.Logger: Logger configurado para errores
-        """
-        return LoggerFactory.create_logger(name, ERROR_LOG_FILE, logging.ERROR)
+# Create and configure web logger
+web_logger = logging.getLogger('checktime.web')
+web_handler = RotatingFileHandler(
+    WEB_LOG_FILE,
+    maxBytes=LOG_MAX_BYTES,
+    backupCount=LOG_BACKUP_COUNT
+)
+web_handler.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=DATE_FORMAT))
+web_logger.addHandler(web_handler)
 
-# Loggers predefinidos
-autofichar_logger = LoggerFactory.create_logger('autofichar')
-bot_logger = LoggerFactory.create_logger('bot')
-error_logger = LoggerFactory.create_error_logger('error') 
+# Create and configure scheduler logger
+scheduler_logger = logging.getLogger('checktime.scheduler')
+scheduler_handler = RotatingFileHandler(
+    SCHEDULER_LOG_FILE,
+    maxBytes=LOG_MAX_BYTES,
+    backupCount=LOG_BACKUP_COUNT
+)
+scheduler_handler.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=DATE_FORMAT))
+scheduler_logger.addHandler(scheduler_handler)
+
+# Create and configure error logger
+error_logger = logging.getLogger('checktime.error')
+error_handler = RotatingFileHandler(
+    ERROR_LOG_FILE,
+    maxBytes=LOG_MAX_BYTES,
+    backupCount=LOG_BACKUP_COUNT
+)
+error_handler.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=DATE_FORMAT))
+error_handler.setLevel(logging.ERROR)
+error_logger.addHandler(error_handler) 
