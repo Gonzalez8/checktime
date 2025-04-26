@@ -6,7 +6,7 @@ This script creates the tables needed for the application.
 
 import logging
 from datetime import datetime, timedelta
-from checktime.shared.config import get_admin_password, get_database_url
+from checktime.shared.config import get_admin_password, get_database_url, get_telegram_chat_id
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from flask import Flask
@@ -15,6 +15,7 @@ from checktime.shared.db import db
 from checktime.shared.models import User, Holiday, SchedulePeriod, DaySchedule
 from checktime.shared.repository import user_repository, holiday_repository
 from checktime.shared.repository import schedule_period_repository, day_schedule_repository
+from checktime.shared.services.user_manager import UserManager
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -44,6 +45,16 @@ def init_db():
                 is_admin=True,
             )
             admin.set_password(get_admin_password())
+            
+            # Set Telegram chat ID from environment variable
+            telegram_chat_id = get_telegram_chat_id()
+            if telegram_chat_id:
+                admin.telegram_chat_id = telegram_chat_id
+                admin.telegram_notifications_enabled = True
+                logger.info(f"Admin user created with Telegram chat ID: {telegram_chat_id}")
+            else:
+                logger.info("Admin user created without Telegram chat ID (not set in environment)")
+                
             db.session.add(admin)
             db.session.commit()
             logger.info("Admin user created")
@@ -89,6 +100,9 @@ def init_db():
 
 def create_admin_user():
     """Create admin user if it doesn't exist."""
+    # Initialize UserManager
+    user_manager = UserManager()
+    
     # Check if admin user exists
     admin = User.query.filter_by(username='admin').first()
     
@@ -96,12 +110,24 @@ def create_admin_user():
         logger.info("Creating admin user")
         
         # Create admin user
-        user_repository.create_user(
+        admin = user_repository.create_user(
             username='admin',
             email='admin@example.com',
             password=get_admin_password(),
             is_admin=True
         )
+        
+        # Set Telegram chat ID from environment variable
+        telegram_chat_id = get_telegram_chat_id()
+        if telegram_chat_id:
+            user_manager.set_telegram_settings(
+                user_id=admin.id,
+                chat_id=telegram_chat_id,
+                enabled=True
+            )
+            logger.info(f"Set Telegram chat ID for admin user: {telegram_chat_id}")
+        else:
+            logger.info("No Telegram chat ID set in environment for admin user")
 
         logger.info("Admin user created successfully")
     else:

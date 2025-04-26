@@ -4,9 +4,7 @@ from flask_wtf import FlaskForm
 from wtforms import StringField, PasswordField, BooleanField, SubmitField
 from wtforms.validators import DataRequired, Email, EqualTo, ValidationError, Optional
 
-from checktime.shared.models.user import User
-from checktime.shared.repository import user_repository
-from checktime.shared.config import get_admin_password
+from checktime.shared.services.user_manager import UserManager
 from checktime.web.translations import get_translation
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
@@ -36,13 +34,15 @@ class RegistrationForm(FlaskForm):
     submit = SubmitField('Register')
     
     def validate_username(self, username):
-        user = user_repository.get_by_username(username.data)
+        user_manager = UserManager()
+        user = user_manager.get_by_username(username.data)
         if user is not None:
             lang = get_language()
             raise ValidationError(get_translation('username_taken', lang))
     
     def validate_email(self, email):
-        user = user_repository.get_by_email(email.data)
+        user_manager = UserManager()
+        user = user_manager.get_by_email(email.data)
         if user is not None:
             lang = get_language()
             raise ValidationError(get_translation('email_taken', lang))
@@ -62,14 +62,16 @@ class ProfileForm(FlaskForm):
     
     def validate_username(self, username):
         if username.data != self.original_username:
-            user = user_repository.get_by_username(username.data)
+            user_manager = UserManager()
+            user = user_manager.get_by_username(username.data)
             if user is not None:
                 lang = get_language()
                 raise ValidationError(get_translation('username_taken', lang))
     
     def validate_email(self, email):
         if email.data != self.original_email:
-            user = user_repository.get_by_email(email.data)
+            user_manager = UserManager()
+            user = user_manager.get_by_email(email.data)
             if user is not None:
                 lang = get_language()
                 raise ValidationError(get_translation('email_taken', lang))
@@ -92,7 +94,8 @@ def login():
     
     form = LoginForm()
     if form.validate_on_submit():
-        user = user_repository.get_by_username(form.username.data)
+        user_manager = UserManager()
+        user = user_manager.get_by_username(form.username.data)
         if user is None or not user.check_password(form.password.data):
             flash(get_translation('invalid_username_or_password', get_language()), 'danger')
             return redirect(url_for('auth.login'))
@@ -117,8 +120,9 @@ def register():
     
     form = RegistrationForm()
     if form.validate_on_submit():
+        user_manager = UserManager()
         # Create user
-        user = user_repository.create_user(
+        user = user_manager.create_user(
             username=form.username.data,
             email=form.email.data,
             password=form.password.data
@@ -126,7 +130,7 @@ def register():
         
         # Set CheckJC credentials if provided
         if form.checkjc_username.data and form.checkjc_password.data:
-            user_repository.set_checkjc_credentials(
+            user_manager.set_checkjc_credentials(
                 user_id=user.id,
                 username=form.checkjc_username.data,
                 password=form.checkjc_password.data,
@@ -135,7 +139,7 @@ def register():
             
         # Set Telegram settings if provided
         if form.telegram_chat_id.data:
-            user_repository.set_telegram_settings(
+            user_manager.set_telegram_settings(
                 user_id=user.id,
                 chat_id=form.telegram_chat_id.data,
                 enabled=form.telegram_notifications_enabled.data
@@ -150,6 +154,7 @@ def register():
 @login_required
 def profile():
     form = ProfileForm(current_user.username, current_user.email)
+    user_manager = UserManager()
     
     if form.validate_on_submit():
         # Check current password if the user is trying to change their password
@@ -158,7 +163,7 @@ def profile():
             return redirect(url_for('auth.profile'))
         
         # Update user information
-        user_repository.update_user(
+        user_manager.update_user(
             user=current_user,
             username=form.username.data,
             email=form.email.data,
@@ -178,7 +183,7 @@ def profile():
     
     # Handle CheckJC form submission
     if checkjc_form.is_submitted() and 'checkjc_submit' in request.form:
-        user_repository.set_checkjc_credentials(
+        user_manager.set_checkjc_credentials(
             user_id=current_user.id,
             username=checkjc_form.checkjc_username.data,
             password=checkjc_form.checkjc_password.data if checkjc_form.checkjc_password.data else current_user.checkjc_password,
@@ -189,7 +194,7 @@ def profile():
     
     # Handle Telegram form submission
     if telegram_form.is_submitted() and 'telegram_submit' in request.form:
-        user_repository.set_telegram_settings(
+        user_manager.set_telegram_settings(
             user_id=current_user.id,
             chat_id=telegram_form.telegram_chat_id.data,
             enabled=telegram_form.telegram_notifications_enabled.data
