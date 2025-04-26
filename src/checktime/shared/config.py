@@ -44,15 +44,6 @@ def get_port() -> int:
     """Get the web server port"""
     return int(get_config('PORT', '5000'))
 
-# CheckJC configuration
-def get_checkjc_username() -> str:
-    """Get the CheckJC username"""
-    return get_config('CHECKJC_USERNAME', '')
-
-def get_checkjc_password() -> str:
-    """Get the CheckJC password"""
-    return get_config('CHECKJC_PASSWORD', '')
-
 # Telegram configuration
 def get_telegram_token() -> str:
     """Get the Telegram bot token"""
@@ -61,6 +52,10 @@ def get_telegram_token() -> str:
 def get_telegram_chat_id() -> str:
     """Get the Telegram chat ID"""
     return get_config('TELEGRAM_CHAT_ID', '')
+
+def get_telegram_bot_name() -> str:
+    """Get the Telegram bot name"""
+    return get_config('TELEGRAM_BOT_NAME', '@CheckTimeBot')
 
 # Selenium configuration
 def get_selenium_timeout() -> int:
@@ -74,4 +69,4 @@ def get_log_level() -> str:
 
 def get_log_date_format() -> str:
     """Get the log date format"""
-    return get_config('LOG_DATE_FORMAT', '%Y-%m-%d %H:%M:%S') 
+    return get_config('LOG_DATE_FORMAT', '%Y-%m-%d %H:%M:%S')

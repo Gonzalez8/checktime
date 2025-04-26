@@ -108,7 +108,19 @@
                             <i class="bi bi-person-circle"></i> {{ current_user.username }}
                         </a>
                         <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="navbarDropdown">
-                            <li><a class="dropdown-item" href="{{ url_for('auth.logout') }}">{{ _('logout') }}</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('auth.profile') }}">
+                                <i class="bi bi-person"></i> {{ _('profile') }}
+                            </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('auth.profile') }}#checkjc-config">
+                                <i class="bi bi-clock"></i> {{ _('checkjc_config') }}
+                            </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('auth.profile') }}#telegram-config">
+                                <i class="bi bi-telegram"></i> {{ _('telegram_config') }}
+                            </a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="{{ url_for('auth.logout') }}">
+                                <i class="bi bi-box-arrow-right"></i> {{ _('logout') }}
+                            </a></li>
                         </ul>
                     </li>
                     {% else %}

@@ -80,7 +80,7 @@ class SchedulePeriodForm(FlaskForm):
 @login_required
 def index():
     """List all schedule periods."""
-    periods = schedule_period_repository.get_all()
+    periods = schedule_period_repository.get_all(current_user.id)
     return render_template('schedules/index.html', periods=periods)
 
 @schedules_bp.route('/add', methods=['GET', 'POST'])
@@ -90,7 +90,7 @@ def add():
     form = SchedulePeriodForm()
     if form.validate_on_submit():
         # Check for overlapping periods
-        if schedule_period_repository.check_overlap(form.start_date.data, form.end_date.data) and form.is_active.data:
+        if schedule_period_repository.check_overlap(form.start_date.data, form.end_date.data, current_user.id) and form.is_active.data:
             flash_message('period_overlap_error', 'danger')
             return redirect(url_for('schedules.add'))
         
@@ -99,7 +99,8 @@ def add():
             name=form.name.data,
             start_date=form.start_date.data,
             end_date=form.end_date.data,
-            is_active=form.is_active.data
+            is_active=form.is_active.data,
+            user_id=current_user.id
         )
         
         flash_message('period_added')
@@ -111,7 +112,7 @@ def add():
 @login_required
 def edit(period_id):
     """Edit an existing schedule period."""
-    period = schedule_period_repository.get_by_id(period_id)
+    period = schedule_period_repository.get_by_id(period_id, current_user.id)
     if not period:
         flash_message('period_not_found', 'danger')
         return redirect(url_for('schedules.index'))
@@ -123,7 +124,7 @@ def edit(period_id):
     
     if form.validate_on_submit():
         # Check for overlapping periods
-        if schedule_period_repository.check_overlap(form.start_date.data, form.end_date.data, period_id) and form.is_active.data:
+        if schedule_period_repository.check_overlap(form.start_date.data, form.end_date.data, current_user.id, period_id) and form.is_active.data:
             flash_message('period_overlap_error', 'danger')
             return redirect(url_for('schedules.edit', period_id=period_id))
         
@@ -145,7 +146,7 @@ def edit(period_id):
 @login_required
 def delete(period_id):
     """Delete a schedule period."""
-    period = schedule_period_repository.get_by_id(period_id)
+    period = schedule_period_repository.get_by_id(period_id, current_user.id)
     if not period:
         flash_message('period_not_found', 'danger')
         return redirect(url_for('schedules.index'))
@@ -158,7 +159,7 @@ def delete(period_id):
 @login_required
 def edit_days(period_id):
     """Edit the daily schedules for a period."""
-    period = schedule_period_repository.get_by_id(period_id)
+    period = schedule_period_repository.get_by_id(period_id, current_user.id)
     if not period:
         flash_message('period_not_found', 'danger')
         return redirect(url_for('schedules.index'))

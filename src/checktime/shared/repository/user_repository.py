@@ -39,4 +39,74 @@ class UserRepository(BaseRepository[User]):
             user.set_password(password)
         if is_admin is not None:
             user.is_admin = is_admin
+        return super().update(user)
+        
+    def get_all_with_checkjc_configured(self) -> List[User]:
+        """
+        Get all users who have CheckJC configured and enabled for automatic check-in.
+        
+        Returns:
+            List[User]: List of users with CheckJC configured
+        """
+        return User.query.filter(
+            User.checkjc_username.isnot(None),
+            User.checkjc_password_encrypted.isnot(None),
+            User.auto_checkin_enabled == True
+        ).all()
+        
+    def set_checkjc_credentials(self, user_id: int, username: str, password: str, 
+                              enabled: bool = True) -> User:
+        """
+        Set the CheckJC credentials for a user.
+        
+        Args:
+            user_id (int): The ID of the user to update
+            username (str): The CheckJC username
+            password (str): The CheckJC password
+            enabled (bool, optional): Whether auto check-in is enabled. Defaults to True.
+            
+        Returns:
+            User: The updated user
+        """
+        user = self.get_by_id(user_id)
+        if not user:
+            return None
+            
+        user.checkjc_username = username
+        user.set_checkjc_password(password)
+        user.auto_checkin_enabled = enabled
+        
+        return super().update(user)
+        
+    def get_all_with_telegram_configured(self) -> List[User]:
+        """
+        Get all users who have Telegram notifications configured and enabled.
+        
+        Returns:
+            List[User]: List of users with Telegram configured
+        """
+        return User.query.filter(
+            User.telegram_chat_id.isnot(None),
+            User.telegram_notifications_enabled == True
+        ).all()
+        
+    def set_telegram_settings(self, user_id: int, chat_id: str, enabled: bool = True) -> User:
+        """
+        Set the Telegram settings for a user.
+        
+        Args:
+            user_id (int): The ID of the user to update
+            chat_id (str): The Telegram chat ID
+            enabled (bool, optional): Whether Telegram notifications are enabled. Defaults to True.
+            
+        Returns:
+            User: The updated user
+        """
+        user = self.get_by_id(user_id)
+        if not user:
+            return None
+            
+        user.telegram_chat_id = chat_id
+        user.telegram_notifications_enabled = enabled
+        
         return super().update(user) 

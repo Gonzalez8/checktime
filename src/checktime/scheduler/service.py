@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """
 Scheduler service for CheckTime application.
-This script starts the scheduler service that checks schedules and performs scheduled clock-ins/outs.
+This script starts the scheduler service that checks schedules and performs scheduled clock-ins/outs for all users.
 """
 
 import logging
@@ -13,8 +13,8 @@ import threading
 from checktime.scheduler.checker import CheckJCClient
 from checktime.shared.config import get_log_level
 from checktime.utils.telegram import TelegramClient
-from checktime.shared.models import SchedulePeriod, DaySchedule, Holiday
-from checktime.shared.repository import holiday_repository, schedule_period_repository, day_schedule_repository
+from checktime.shared.repository import holiday_repository, schedule_period_repository, day_schedule_repository, user_repository
+from checktime.web import create_app
 
 # Configure logging
 logging.basicConfig(
@@ -30,129 +30,201 @@ logger = logging.getLogger(__name__)
 # Initialize Telegram client
 telegram_client = TelegramClient()
 
-def is_working_day():
-    """Check if today is a working day."""
-    today = datetime.now().date()
-    weekday = today.weekday()
-    
-    # Check if it's a weekend
-    if weekday >= 5:  # 5 is Saturday, 6 is Sunday
-        logger.info(f"Today is a weekend: {today}")
-        return False
-    
-    # Check if it's a holiday
-    holiday = holiday_repository.get_by_date(today)
-    if holiday:
-        logger.info(f"Holiday found in database: {today}")
-        return False
-    
-    # Check if there's a schedule for today
-    active_period = schedule_period_repository.get_active_period_for_date(today)
-    if not active_period:
-        logger.info(f"No active period for today: {today}")
-        return False
-    
-    # Check if there's a schedule configured for this day of the week
-    day_schedule = day_schedule_repository.get_by_period_and_day(active_period.id, weekday)
-    if not day_schedule:
-        logger.info(f"No schedule configured for today ({weekday}): {today}")
-        return False
-    
-    logger.info(f"Today is a working day: {today}")
-    return True
+# Create Flask app
+app = create_app()
 
-def get_schedule_times():
-    """Get check-in and check-out times based on the current schedule in database"""
-    today = datetime.now().date()
-    weekday = today.weekday()
-    
-    # Get active period for today
-    active_period = schedule_period_repository.get_active_period_for_date(today)
-    
-    if active_period:
-        # Get day schedule for today's weekday
-        day_schedule = day_schedule_repository.get_by_period_and_day(active_period.id, weekday)
-        
-        if day_schedule:
-            logger.info(f"Using schedule from database: {day_schedule.check_in_time} - {day_schedule.check_out_time}")
-            return day_schedule.check_in_time, day_schedule.check_out_time
-    
-    # If no configuration in the database, don't clock
-    logger.info("No schedule configured in the database. Automatic clock in/out will not be performed.")
-    return None, None
-
-def perform_check(check_type):
+def is_working_day(user_id=None):
     """
-    Perform the check-in/out process.
+    Check if today is a working day for a specific user.
     
     Args:
+        user_id (int, optional): The user ID to check. If None, checks globally.
+    
+    Returns:
+        bool: True if it's a working day, False otherwise.
+    """
+    with app.app_context():
+        today = datetime.now().date()
+        weekday = today.weekday()
+        
+        # Check if it's a holiday for this user
+        holiday = holiday_repository.get_by_date(today, user_id)
+        if holiday:
+            logger.info(f"Holiday found in database for user {user_id}: {today}")
+            return False
+        
+        # Check if there's a schedule for today for this user
+        active_period = schedule_period_repository.get_active_period_for_date(today, user_id)
+        if not active_period:
+            logger.info(f"No active period for today: {today} for user {user_id}")
+            return False
+        
+        # Check if there's a schedule configured for this day of the week
+        day_schedule = day_schedule_repository.get_by_period_and_day(active_period.id, weekday)
+        if not day_schedule:
+            logger.info(f"No schedule configured for today ({weekday}): {today} for user {user_id}")
+            return False
+        
+        logger.info(f"Today is a working day: {today} for user {user_id}")
+        return True
+
+def get_schedule_times(user_id):
+    """
+    Get check-in and check-out times based on the current schedule in database for a specific user.
+    
+    Args:
+        user_id (int): The user ID to get schedule for.
+        
+    Returns:
+        tuple: (check_in_time, check_out_time) or (None, None) if no schedule.
+    """
+    with app.app_context():
+        today = datetime.now().date()
+        weekday = today.weekday()
+        
+        # Get active period for today for this user
+        active_period = schedule_period_repository.get_active_period_for_date(today, user_id)
+        
+        if active_period:
+            # Get day schedule for today's weekday
+            day_schedule = day_schedule_repository.get_by_period_and_day(active_period.id, weekday)
+            
+            if day_schedule:
+                logger.info(f"Using schedule from database for user {user_id}: {day_schedule.check_in_time} - {day_schedule.check_out_time}")
+                return day_schedule.check_in_time, day_schedule.check_out_time
+        
+        # If no configuration in the database, don't clock
+        logger.info(f"No schedule configured in the database for user {user_id}. Automatic clock in/out will not be performed.")
+        return None, None
+
+def perform_check_for_user(user, check_type):
+    """
+    Perform the check-in/out process for a specific user.
+    
+    Args:
+        user (User): The user to perform check for.
         check_type (str): Type of check ('in' or 'out')
     """
-    if not is_working_day():
-        message = "Today is not a working day or it's a holiday. No check will be performed."
+    if not is_working_day(user.id):
+        message = f"Today is not a working day or it's a holiday for user {user.username}. No check will be performed."
         logger.info(message)
         telegram_client.send_message(f"ℹ️ {message}")
         return
 
-    logger.info(f"Starting {check_type} check process...")
+    logger.info(f"Starting {check_type} check process for user {user.username}...")
     
     try:
-        with CheckJCClient() as client:
+        with CheckJCClient(username=user.checkjc_username, password=user.checkjc_password) as client:
             client.login()
             if check_type == "in":
                 client.check_in()
             else:
                 client.check_out()
-            logger.info(f"{check_type.capitalize()} check completed successfully.")
+            logger.info(f"{check_type.capitalize()} check completed successfully for user {user.username}.")
     except Exception as e:
-        error_msg = f"Error during {check_type} check: {str(e)}"
+        error_msg = f"Error during {check_type} check for user {user.username}: {str(e)}"
         logger.error(error_msg)
         telegram_client.send_message(f"❌ {error_msg}")
 
-def perform_check_in():
-    """Perform the check-in process."""
-    perform_check("in")
-
-def perform_check_out():
-    """Perform the check-out process."""
-    perform_check("out")
+def perform_check(check_type):
+    """
+    Perform the check-in/out process for all eligible users.
+    
+    Args:
+        check_type (str): Type of check ('in' or 'out')
+    """
+    with app.app_context():
+        # Get all users that have CheckJC configured
+        users = user_repository.get_all_with_checkjc_configured()
+    
+    if not users:
+        logger.info(f"No users with CheckJC configured. No {check_type} checks will be performed.")
+        return
+        
+    for user in users:
+        # Create a separate thread for each user's check
+        thread = threading.Thread(
+            target=perform_check_for_user,
+            args=(user, check_type)
+        )
+        thread.start()
 
 def schedule_check():
-    """Check if it's time to perform check-in/out based on the schedule"""
-    if not is_working_day():
-        return
-
-    check_in_time, check_out_time = get_schedule_times()
+    """Check if it's time to perform check-in/out based on schedules for all users"""
+    with app.app_context():
+        # Get all users with CheckJC configured
+        users = user_repository.get_all_with_checkjc_configured()
     
-    # If no schedules defined, don't perform check
-    if check_in_time is None or check_out_time is None:
+    if not users:
         return
         
     current_time = datetime.now().strftime("%H:%M")
     
-    if current_time == check_in_time:
-        perform_check_in()
-    elif current_time == check_out_time:
-        perform_check_out()
+    for user in users:
+        if not is_working_day(user.id):
+            continue
+            
+        check_in_time, check_out_time = get_schedule_times(user.id)
+        
+        # If no schedules defined, don't perform check
+        if check_in_time is None or check_out_time is None:
+            continue
+            
+        if current_time == check_in_time:
+            # Create a separate thread for check-in
+            thread = threading.Thread(
+                target=perform_check_for_user,
+                args=(user, "in")
+            )
+            thread.start()
+        elif current_time == check_out_time:
+            # Create a separate thread for check-out
+            thread = threading.Thread(
+                target=perform_check_for_user,
+                args=(user, "out")
+            )
+            thread.start()
+
+def perform_check_in():
+    """Perform the check-in process for all eligible users."""
+    perform_check("in")
+
+def perform_check_out():
+    """Perform the check-out process for all eligible users."""
+    perform_check("out")
 
 def main():
     """Main function that runs only the scheduler service."""
-    logger.info("Starting automatic check-in/out service...")
-    telegram_client.send_message("🚀 Starting automatic check-in/out service")
+    logger.info("Starting automatic check-in/out service for all users...")
+    
+    try:
+        # Initialize app context once at startup
+        with app.app_context():
+            # Send message inside the app context 
+            telegram_client.send_message("🚀 Starting automatic check-in/out service for all users")
 
-    # Schedule tasks with dynamic schedules
-    schedule.every().minute.do(lambda: schedule_check())
+        # Schedule tasks with dynamic schedules
+        schedule.every().minute.do(lambda: schedule_check())
 
-    # Keep the script running
-    while True:
+        # Keep the script running
+        while True:
+            try:
+                schedule.run_pending()
+                time.sleep(60)  # Check every minute
+            except Exception as e:
+                error_msg = f"Error in main loop: {str(e)}"
+                logger.error(error_msg)
+                with app.app_context():
+                    telegram_client.send_message(f"❌ {error_msg}")
+                time.sleep(300)  # Wait 5 minutes before retrying
+    except Exception as e:
+        logger.error(f"Fatal error in scheduler service: {str(e)}")
+        # Try to send error notification with app context
         try:
-            schedule.run_pending()
-            time.sleep(60)  # Check every minute
-        except Exception as e:
-            error_msg = f"Error in main loop: {str(e)}"
-            logger.error(error_msg)
-            telegram_client.send_message(f"❌ {error_msg}")
-            time.sleep(300)  # Wait 5 minutes before retrying
+            with app.app_context():
+                telegram_client.send_message(f"💥 Fatal error in scheduler service: {str(e)}")
+        except:
+            logger.error("Could not send error notification")
 
 if __name__ == "__main__":
     main() 

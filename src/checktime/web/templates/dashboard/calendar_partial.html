@@ -42,7 +42,7 @@
                             <div class="cal-event holiday" title="{{ day.holiday_name }}">
                                 {{ day.holiday_name }}
                             </div>
-                            {% elif day.is_working_day and not is_weekend %}
+                            {% elif day.is_working_day %}
                             <div class="cal-event-group">
                                 <div class="cal-event check-in" title="{{ day.period_name }}">
                                     <i class="bi bi-arrow-down-circle"></i> {{ day.check_in_time|default('09:00') }}

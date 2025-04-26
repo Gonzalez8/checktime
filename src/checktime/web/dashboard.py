@@ -46,10 +46,10 @@ def index(year=None, month=None):
         next_year = year
     
     # Get holidays
-    upcoming_holidays = holiday_repository.get_upcoming_holidays(today, 5)
+    upcoming_holidays = holiday_repository.get_upcoming_holidays(today, 5, current_user.id)
     
     # Get active schedule periods
-    active_periods = schedule_period_repository.get_active_periods_after_date(today)
+    active_periods = schedule_period_repository.get_active_periods_after_date(today, current_user.id)
     
     # Get current schedule
     current_schedule = next((period for period in active_periods 
@@ -70,7 +70,7 @@ def index(year=None, month=None):
     days_this_week = 0
     
     # Get holidays for this week
-    week_holidays = holiday_repository.get_holidays_for_date_range(start_of_week, end_of_week)
+    week_holidays = holiday_repository.get_holidays_for_date_range(start_of_week, end_of_week, current_user.id)
     holiday_dates = [h.date for h in week_holidays]
     
     # Count working days (weekdays with schedule that are not holidays)
@@ -84,9 +84,6 @@ def index(year=None, month=None):
             # Skip days outside of schedule date range
             if check_date < current_schedule.start_date or check_date > current_schedule.end_date:
                 continue
-            # Skip weekends (5=Sat, 6=Sun)
-            if check_date.weekday() >= 5:
-                continue
             # Skip holidays
             if check_date in holiday_dates:
                 continue
@@ -98,10 +95,10 @@ def index(year=None, month=None):
                 days_this_week += 1
     
     # Get all active periods that overlap with the selected month for the calendar
-    calendar_active_periods = schedule_period_repository.get_periods_for_date_range(current_date, last_day_of_month)
+    calendar_active_periods = schedule_period_repository.get_periods_for_date_range(current_date, last_day_of_month, current_user.id)
     
     # Generate calendar data for the selected month
-    calendar_data = generate_calendar_data(year, month, calendar_active_periods)
+    calendar_data = generate_calendar_data(year, month, calendar_active_periods, current_user.id)
     
     # Get the month name in the appropriate language
     month_name = current_date.strftime('%B')
@@ -159,14 +156,10 @@ def calendar_partial(year, month):
         next_year = year
     
     # Get all active schedule periods that overlap with the selected month
-    active_periods = schedule_period_repository.get_periods_for_date_range(current_date, last_day_of_month)
-    
-    # Find the current schedule (for today)
-    current_schedule = next((period for period in schedule_period_repository.get_active_periods() 
-                      if period.start_date <= today <= period.end_date), None)
+    active_periods = schedule_period_repository.get_periods_for_date_range(current_date, last_day_of_month, current_user.id)
     
     # Generate calendar data for all active periods that overlap with this month
-    calendar_data = generate_calendar_data(year, month, active_periods)
+    calendar_data = generate_calendar_data(year, month, active_periods, current_user.id)
     
     # Get the month name in the appropriate language
     month_name = current_date.strftime('%B')
@@ -189,7 +182,7 @@ def calendar_partial(year, month):
         next_month=next_month
     )
 
-def generate_calendar_data(year, month, active_periods):
+def generate_calendar_data(year, month, active_periods, user_id):
     """Generate calendar data for the specified month for all active periods."""
     # Get the first day of the month and the number of days
     first_day = date(year, month, 1)
@@ -199,7 +192,7 @@ def generate_calendar_data(year, month, active_periods):
     start_date = first_day
     end_date = date(year, month, num_days)
     
-    holidays = holiday_repository.get_holidays_for_date_range(start_date, end_date)
+    holidays = holiday_repository.get_holidays_for_date_range(start_date, end_date, user_id)
     
     # Create a dictionary of holidays for quick lookup
     holiday_dict = {h.date: h for h in holidays}
@@ -225,9 +218,6 @@ def generate_calendar_data(year, month, active_periods):
                 if check_date < period.start_date or check_date > period.end_date:
                     continue
                 
-                # Skip weekends
-                if check_date.weekday() >= 5:
-                    continue
                 
                 # Skip if not in schedule
                 if check_date.weekday() not in schedule_dict:
