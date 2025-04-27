@@ -14,8 +14,6 @@ from checktime.shared.config import get_selenium_timeout
 
 logger = logging.getLogger(__name__)
 
-SIMULATION_MODE = platform.machine() == 'arm64' or os.environ.get('SIMULATION_MODE', 'false').lower() == 'true'
-
 class CheckJCClient:
     """Cliente para interactuar con CheckJC."""
     
