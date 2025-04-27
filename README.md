@@ -156,20 +156,58 @@ The following commands are available in the Telegram bot:
    cp .env.example .env
    ```
 
-2. Edit the `.env` file with your credentials and configuration:
+2. Edit the `.env` file with your configuration:
+
+   ### Database Configuration
    ```
-   # Admin credentials (for initial setup)
-   ADMIN_PASSWORD=admin_password
+   # Path to store database files
+   DB_STORAGE_PATH=./postgres_data
    
-   # Telegram Bot (for global alerts and the bot service)
-   TELEGRAM_BOT_TOKEN=your_token #Used for send notifications to the users
-   TELEGRAM_CHAT_ID=default_chat_id  # For system notifications and used for admin user
-   
-   # Web Configuration
-   FLASK_SECRET_KEY=flask_secret_key
+   # PostgreSQL credentials
+   POSTGRES_USER=postgres
+   POSTGRES_PASSWORD=postgres
+   POSTGRES_DB=checktime
+   POSTGRES_DB_PORT=5432
    ```
 
-   Note: Individual user CheckJC credentials and Telegram chat IDs are now stored in the database, not in environment variables.
+   ### Web Server Configuration
+   ```
+   # Application version
+   CHECK_TIME_VERSION=latest
+   
+   # Secret key for Flask sessions (change in production!)
+   FLASK_SECRET_KEY=your_secure_random_key
+   
+   # Admin password for initial login
+   ADMIN_PASSWORD=your_admin_password
+   
+   # Internal and external port configuration
+   PORT=5000
+   WEB_PORT=5001
+   ```
+
+   ### Telegram Configuration
+   ```
+   # Telegram bot token (from BotFather)
+   TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+   
+   # Default admin Telegram chat ID
+   TELEGRAM_CHAT_ID=your_admin_chat_id
+   
+   # Bot name
+   TELEGRAM_BOT_NAME=name_of_your_bot
+   ```
+
+   ### Additional Settings
+   ```
+   # Timezone configuration
+   TZ=Europe/Madrid
+   
+   # Logging level
+   LOG_LEVEL=INFO
+   ```
+
+   Note: Individual user CheckJC credentials and Telegram chat IDs are stored in the database, not in environment variables.
 
 ## Installation and Execution
 
@@ -180,7 +218,7 @@ The following commands are available in the Telegram bot:
    docker compose up -d
    ```
 
-2. Access the web interface at: http://localhost:5000
+2. Access the web interface at: http://localhost:5001 (or whatever port you configured as WEB_PORT)
 
 3. To start specific services:
    ```
@@ -216,7 +254,7 @@ The following commands are available in the Telegram bot:
 
 ## Using the Web Interface
 
-1. Access http://localhost:5000
+1. Access http://localhost:5001 (or whatever port you configured as WEB_PORT)
 2. Log in with username `admin` and the password configured in `ADMIN_PASSWORD`
 3. New users can register and configure their own CheckJC credentials and Telegram settings
 4. From the dashboard you can:
