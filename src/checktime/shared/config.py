@@ -29,7 +29,35 @@ def get_config(key: str, default: Optional[Any] = None) -> Any:
 # Database configuration
 def get_database_url() -> str:
     """Get the database URL from configuration"""
-    return get_config('DATABASE_URL', 'postgresql://postgres:postgres@db:5432/checktime')
+    # Si DATABASE_URL está definido explícitamente, usarlo
+    explicit_url = get_config('DATABASE_URL', None)
+    if explicit_url:
+        return explicit_url
+        
+    # Sino, construirlo a partir de los componentes
+    user = get_postgres_user()
+    password = get_postgres_password()
+    db_name = get_postgres_db()
+    host = 'db'
+    port = get_config('POSTGRES_DB_PORT', '5432')
+    
+    return f"postgresql://{user}:{password}@{host}:{port}/{db_name}"
+
+def get_database_storage_path() -> str:
+    """Get the database storage path for Docker volume"""
+    return get_config('DB_STORAGE_PATH', 'postgres_data')
+
+def get_postgres_user() -> str:
+    """Get the PostgreSQL username"""
+    return get_config('POSTGRES_USER', 'postgres')
+
+def get_postgres_password() -> str:
+    """Get the PostgreSQL password"""
+    return get_config('POSTGRES_PASSWORD', 'postgres')
+
+def get_postgres_db() -> str:
+    """Get the PostgreSQL database name"""
+    return get_config('POSTGRES_DB', 'checktime')
 
 # Web server configuration
 def get_secret_key() -> str:
