@@ -1,273 +1,205 @@
 # CheckTime
 
-An application for automating check-in and check-out on the CheckJC system.
+Automated check-in and check-out system for CheckJC with web management and Telegram integration.
+
+---
+
+## Table of Contents
+
+- [Features](#features)
+- [Screenshots](#screenshots)
+- [Architecture Overview](#architecture-overview)
+- [Service Details](#service-details)
+- [Multi-User Support](#multi-user-support)
+- [Requirements](#requirements)
+- [Installation](#installation)
+  - [1. Configuration](#1-configuration)
+  - [2. Installation with Docker (Recommended)](#2-installation-with-docker-recommended)
+  - [3. Installation without Docker (Development)](#3-installation-without-docker-development)
+- [Using the Web Interface](#using-the-web-interface)
+- [License](#license)
+- [Additional Notes](#additional-notes)
+
+---
 
 ## Features
 
-- Automated check-in and check-out on working days
-- Automatic detection of weekends and holidays
-- Support for multiple users with individual schedules and credentials
-- User profiles with CheckJC credential management
-- Personalized Telegram notifications for each user
-- Web interface to configure schedules and holidays
+- Automatic check-in/check-out based on user schedules
+- Holiday detection (national, regional, local)
+- Multi-user support with personal CheckJC credentials
+- Telegram bot integration for notifications and remote management
+- Web dashboard for full configuration
+- Support for custom schedules and holiday management
+
+---
 
 ## Screenshots
 
-### Dashboard
-![Dashboard Calendar View](docs/screenshots/dashboard-calendar.png)
-The main dashboard displays a monthly calendar with daily check-in and check-out times.
+### Dashboard Views
+![Calendar View](docs/screenshots/dashboard-calendar.png)  
+![Statistics View](docs/screenshots/dashboard-stats.png)
 
-![Dashboard Stats View](docs/screenshots/dashboard-stats.png)
-The dashboard also shows current schedule, upcoming holidays, active schedule periods, and statistics.
-
-### User Management
-Users can manage their own CheckJC credentials and preferences through their profile page. 
-This allows each user to configure their own check-in/check-out automation.
-
-Each user can also set up their own Telegram notifications to receive alerts about their check-in/out operations.
-
-### Holiday Management
-![Holiday Import](docs/screenshots/holiday-import.png)
-Easily import holidays from ICS calendar files.
-
-### Schedule Management
+### Holiday and Schedule Management
+![Holiday Import](docs/screenshots/holiday-import.png)  
 ![Schedule Editor](docs/screenshots/schedule-editor.png)
-Edit daily schedules with an intuitive interface.
 
-## Service Architecture
+---
 
-CheckTime is organized into three independent services, each with a single responsibility:
+## Architecture Overview
 
-1. **Web Service**: Provides the web user interface for system administration
-2. **Scheduler Service**: Performs automatic clock-in/clock-out according to configured schedules for all users
-3. **Bot Service**: Handles Telegram integration for notifications and commands
+CheckTime consists of four main services:
+- **Web**: User dashboard and system management.
+- **Scheduler**: Automated clock-in/clock-out execution.
+- **Bot**: Telegram integration for notifications and commands.
+- **Database**: PostgreSQL for persistent storage.
 
-All services connect to a PostgreSQL database for persistent storage of schedules, holidays, and configuration.
+Each service runs independently but shares a single database for consistency.
 
-This separation ensures greater stability, maintainability, and scalability of the system.
+---
 
-## Services Explained
+## Service Details
 
-### Web Service
-The web interface provides an intuitive dashboard for users to:
-- View current configuration and system status
-- Manage holidays (add individual days or date ranges)
-- Configure schedule periods (e.g., summer schedule, winter schedule)
-- Set check-in/check-out times for each day of the week
-- Manage their CheckJC credentials securely
-- Configure personal Telegram notifications
-- Enable/disable automatic check-in/out for their account
-- Update their profile information and password
+- **Web Service**: Admin dashboard, user management, holiday import, schedule setup.
+- **Scheduler Service**: Executes user check-ins/check-outs according to personalized calendars.
+- **Telegram Bot**: Sends notifications and allows basic remote commands via Telegram.
+- **Database**: Stores users, credentials, holidays, schedules, and preferences.
 
-### Scheduler Service
-This service handles the automation of clock-in/clock-out actions:
-- Supports multiple users with individual schedules and check-in/out times
-- Runs according to the schedules configured in the web interface
-- Uses separate threads for each user's check-in/out operations
-- Automatically detects and skips weekends and holidays
-- Uses a Chrome webdriver to interact with the CheckJC system
-- Logs all actions for auditing and troubleshooting
-- Sends personalized notifications to each user via Telegram
-
-### Bot Service
-The Telegram bot provides remote management capabilities:
-- Allows holiday management directly from your phone
-- Sends personalized notifications about check-in/check-out events
-- Provides status updates about the system
-- Allows administrators to add, remove, or list holidays remotely
-- Supports individual user chat IDs for personalized notifications
-
-### Database
-Uses PostgreSQL to store:
-- User accounts with securely encrypted passwords
-- CheckJC credentials (stored securely for each user)
-- Telegram configuration (chat ID and notification preferences)
-- Holiday information (date and description)
-- Schedule periods and their date ranges
-- Daily check-in/check-out times for each schedule period
-- User-specific preferences and settings
+---
 
 ## Multi-User Support
 
-CheckTime now supports multiple users, each with their own:
-- CheckJC credentials (securely stored)
-- Telegram notifications configuration
-- Schedule periods and daily check-in/out times
-- Holiday management
-- Account preferences
+Each user can:
+- Register their own CheckJC credentials.
+- Manage personal schedules and holidays.
+- Set up Telegram notifications independently.
+- Control automatic check-in/out settings.
 
-The system ensures that each user's check-in/out operations are performed securely and independently, and notifications are sent accordingly.
+All operations are fully isolated per user.
 
-## User Registration and Profile Management
-
-### Registration
-New users can:
-- Create an account with a unique username and email
-- Optionally configure their CheckJC credentials during registration
-- Optionally configure their Telegram notifications during registration
-- Enable or disable automatic check-in/out
-
-### User Profile
-Users can manage their profile including:
-- Update personal information (username, email)
-- Change their password securely
-- Configure or update their CheckJC credentials
-- Set up Telegram notifications with their personal chat ID
-- Enable or disable automatic check-in/out
-
-## Telegram Integration
-
-CheckTime now supports personalized Telegram notifications for each user:
-
-### Setting Up Telegram
-1. Each user can set up their own Telegram chat ID in their profile
-2. The system will send notifications only to users who have configured their Telegram settings
-3. Users can enable or disable notifications at any time
-
-### Automatic Notifications
-The system sends personalized notifications for:
-- Successful check-ins and check-outs
-- Failed check-in/out attempts
-- System status updates
-- Important events like holidays and schedule changes
-
-### Commands
-The following commands are available in the Telegram bot:
-
-- `/getchatid` - Get your Telegram chat ID for configuration
-- `/addfestivo YYYY-MM-DD [description]` - Add a new holiday date with optional description
-  Example: `/addfestivo 2023-12-25 Christmas Day`
-- `/delfestivo YYYY-MM-DD` - Delete a holiday date
-  Example: `/delfestivo 2023-12-25`
-- `/listfestivos` - List upcoming holidays for the current year
-  Shows dates, descriptions, and how many days until each holiday
+---
 
 ## Requirements
 
-- Python 3.8+
-- Google Chrome
-- ChromeDriver (compatible with your installed Chrome version)
-- Docker and Docker Compose (recommended for deployment)
+- **Python 3.8+**
+- **Google Chrome** and **Chromedriver** (compatible version)
+- **Docker** and **Docker Compose** (for production deployment)
 
-## Configuration
+---
 
-1. Copy the `.env.example` file to `.env` and configure the environment variables:
-   ```
+## Installation
+
+Before starting, **make sure you configure your environment variables**.
+
+---
+
+### 1. Configuration
+
+1. **Create your `.env` file**:
+   ```bash
    cp .env.example .env
    ```
 
-2. Edit the `.env` file with your configuration:
+2. **Edit the `.env` file** with your preferred settings:
+   - **Database Settings**: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_DB_PORT`.
+   - **Web App Settings**: `FLASK_SECRET_KEY`, `ADMIN_PASSWORD`, `PORT`, `WEB_PORT`.
+   - **Telegram Bot Settings**: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `TELEGRAM_BOT_NAME` (optional).
+   - **Timezone and Logging**: `TZ`, `LOG_LEVEL`.
 
-   ### Database Configuration
-   ```
-   # Path to store database files
-   DB_STORAGE_PATH=./postgres_data
-   
-   # PostgreSQL credentials
-   POSTGRES_USER=postgres
-   POSTGRES_PASSWORD=postgres
-   POSTGRES_DB=checktime
-   POSTGRES_DB_PORT=5432
-   ```
+> **Important:**  
+> The `.env` file is **mandatory**.  
+> Without it, the application and Docker Compose will not start correctly.
 
-   ### Web Server Configuration
-   ```
-   # Application version
-   CHECK_TIME_VERSION=latest
-   
-   # Secret key for Flask sessions (change in production!)
-   FLASK_SECRET_KEY=your_secure_random_key
-   
-   # Admin password for initial login
-   ADMIN_PASSWORD=your_admin_password
-   
-   # Internal and external port configuration
-   PORT=5000
-   WEB_PORT=5001
-   ```
+---
 
-   ### Telegram Configuration
-   ```
-   # Telegram bot token (from BotFather)
-   TELEGRAM_BOT_TOKEN=your_telegram_bot_token
-   
-   # Default admin Telegram chat ID
-   TELEGRAM_CHAT_ID=your_admin_chat_id
-   
-   # Bot name
-   TELEGRAM_BOT_NAME=name_of_your_bot
-   ```
+### 2. Installation with Docker (Recommended)
 
-   ### Additional Settings
-   ```
-   # Timezone configuration
-   TZ=Europe/Madrid
-   
-   # Logging level
-   LOG_LEVEL=INFO
-   ```
-
-   Note: Individual user CheckJC credentials and Telegram chat IDs are stored in the database, not in environment variables.
-
-## Installation and Execution
-
-### With Docker Compose (recommended)
-
-1. Build and run all services:
-   ```
+1. **Build and start all services**:
+   ```bash
    docker compose up -d
    ```
 
-2. Access the web interface at: http://localhost:5001 (or whatever port you configured as WEB_PORT)
-
-3. To start specific services:
+2. **Access the web interface**:
+   Open your browser at:
    ```
-   docker compose up -d web       # Just the web interface
-   docker compose up -d scheduler # Just the scheduler service
-   docker compose up -d bot       # Just the Telegram bot
-   docker compose up -d db        # Just the database
+   http://localhost:5001
+   ```
+   (or the port you set in `WEB_PORT`).
+
+3. **Available Docker services**:
+   You can start specific services manually if needed:
+   ```bash
+   docker compose up -d web        # Web dashboard
+   docker compose up -d scheduler  # Scheduler service
+   docker compose up -d bot        # Telegram bot
+   docker compose up -d db         # Database only
    ```
 
-   Note: The database service automatically starts as a dependency when other services are started.
+4. **(First time)**  
+   - Login with username `admin` and the password you set in `ADMIN_PASSWORD`.
+   - Configure your own user account, schedules, holidays, and Telegram notifications.
 
-### Without Docker (Development)
+---
 
-1. Create a virtual environment and install dependencies:
-   ```
+### 3. Installation without Docker (Development Mode)
+
+1. **Create a Python virtual environment**:
+   ```bash
    python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   pip install -r requirements.txt
+   source venv/bin/activate   # On Windows: venv\Scripts\activate
+   ```
+
+2. **Install dependencies**:
+   ```bash
    pip install -e .
    ```
 
-2. Run each service separately:
-   ```
-   # Web interface
-   python -m src.checktime.web.server
-   
-   # Scheduler service
-   python -m src.checktime.scheduler.service
-   
-   # Telegram bot
-   python -m src.checktime.bot.listener
-   ```
+3. **Run each service manually**:
+
+   - Web interface:
+     ```bash
+     python -m src.checktime.web.server
+     ```
+   - Scheduler service:
+     ```bash
+     python -m src.checktime.scheduler.service
+     ```
+   - Telegram bot:
+     ```bash
+     python -m src.checktime.bot.listener
+     ```
+
+> ⚠️ Make sure your PostgreSQL database is already running if you work without Docker.
+
+---
 
 ## Using the Web Interface
 
-1. Access http://localhost:5001 (or whatever port you configured as WEB_PORT)
-2. Log in with username `admin` and the password configured in `ADMIN_PASSWORD`
-3. New users can register and configure their own CheckJC credentials and Telegram settings
-4. From the dashboard you can:
-   - View summary of current configuration
-   - Manage holidays
-   - Configure schedule periods
-   - Set check-in/check-out times for each day of the week
-5. From the user profile page, you can:
-   - Update your account information
-   - Configure your CheckJC credentials
-   - Set up Telegram notifications
-   - Enable or disable automatic check-in/out
+1. Access the web at `http://localhost:5001`.
+2. Login as **admin** or register a new user.
+3. Through the dashboard you can:
+   - Manage user accounts
+   - Import holidays from `.ics` files
+   - Set check-in/check-out schedules
+   - Configure Telegram notifications
+   - Enable or disable automatic operations per user
+
+---
 
 ## License
 
-This project is licensed under the MIT License. 
+This project is licensed under the **MIT License**.  
+Feel free to use, modify, and distribute it under the terms of the license.
+
+---
+
+## Additional Notes
+
+- If you plan to use **Telegram**, make sure the bot token is correctly set in `.env`.
+- For **Scheduler** to work, ensure your installed **Chromedriver** version matches your **Google Chrome** version.
+- You can monitor logs with:
+  ```bash
+  docker compose logs -f
+  ```
+- Important logs are also stored in `logs/error.log`.
+
+---

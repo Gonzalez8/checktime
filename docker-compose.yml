@@ -45,7 +45,6 @@ services:
     environment:
       - PYTHONPATH=/app
     volumes:
-      - ./config:/app/config
       - /var/log/checktime:/var/log/checktime
     ports:
       - "${WEB_PORT}:${PORT}"
@@ -63,7 +62,6 @@ services:
     environment:
       - PYTHONPATH=/app
     volumes:
-      - ./config:/app/config
       - /var/log/checktime:/var/log/checktime
     command: python -m src.checktime.bot.listener
     restart: unless-stopped
@@ -80,7 +78,6 @@ services:
       - PYTHONPATH=/app
       - SIMULATION_MODE=false
     volumes:
-      - ./config:/app/config
       - /var/log/checktime:/var/log/checktime
     command: python -m src.checktime.scheduler.service
     restart: unless-stopped

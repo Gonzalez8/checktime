@@ -1,6 +1,4 @@
 import logging
-import os
-import platform
 import time
 from datetime import datetime
 from selenium import webdriver
@@ -10,7 +8,9 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
-from checktime.shared.config import get_selenium_timeout
+from checktime.shared.config import get_selenium_timeout, get_chrome_options_args, get_simulation_mode, get_chrome_bin, get_chromedriver_bin
+
+SIMULATION_MODE = get_simulation_mode()
 
 logger = logging.getLogger(__name__)
 
@@ -35,16 +35,11 @@ class CheckJCClient:
             return self
 
         options = webdriver.ChromeOptions()
-        options.binary_location = os.getenv('CHROME_BIN', '/usr/bin/chromium')
-        options.add_argument("--headless")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--disable-gpu")
-        options.add_argument("--window-size=1920,1080")
-        options.add_argument("--disable-extensions")
-        options.add_argument("--disable-infobars")
+        options.binary_location = get_chrome_bin()
+        for arg in get_chrome_options_args():
+            options.add_argument(arg)
 
-        service = Service(executable_path=os.getenv('CHROMEDRIVER_BIN', '/usr/bin/chromedriver'))
+        service = Service(executable_path=get_chromedriver_bin())
         self.driver = webdriver.Chrome(service=service, options=options)
         self.wait = WebDriverWait(self.driver, self.timeout)
         logger.info(f"Driver de Chrome inicializado correctamente para {self.username}")

@@ -93,3 +93,29 @@ def get_log_level() -> str:
 def get_log_date_format() -> str:
     """Get the log date format"""
     return get_config('LOG_DATE_FORMAT', '%Y-%m-%d %H:%M:%S')
+
+def get_chrome_options_args() -> list:
+    """Get the list of Chrome options for Selenium (headless, etc.)"""
+    # Puedes personalizar estas opciones desde variables de entorno si lo deseas
+    args = [
+        "--headless",
+        "--no-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--window-size=1920,1080",
+        "--disable-extensions",
+        "--disable-infobars"
+    ]
+    return args
+
+def get_simulation_mode() -> bool:
+    """Get the simulation mode from environment variables."""
+    return os.getenv("SIMULATION_MODE", "false").lower() == "true"
+
+def get_chrome_bin() -> str:
+    """Get the Chrome binary location from environment variables."""
+    return os.getenv('CHROME_BIN', '/usr/bin/chromium')
+
+def get_chromedriver_bin() -> str:
+    """Get the ChromeDriver binary location from environment variables."""
+    return os.getenv('CHROMEDRIVER_BIN', '/usr/bin/chromedriver')
