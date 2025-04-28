@@ -112,8 +112,6 @@ def perform_check_for_user(user, check_type):
     if not is_working_day(user.id):
         message = f"Today is not a working day or it's a holiday for user {user.username}. No check will be performed."
         logger.info(message)
-        if hasattr(user, 'telegram_chat_id') and user.telegram_chat_id:
-            telegram_client.send_message(f"ℹ️ {message}", chat_id=user.telegram_chat_id)
         return
 
     logger.info(f"Starting {check_type} check process for user {user.username}...")
@@ -129,12 +127,14 @@ def perform_check_for_user(user, check_type):
                 icon = "🔴"
             logger.info(f"{check_type.capitalize()} check completed successfully for user {user.username}.")
             if hasattr(user, 'telegram_chat_id') and user.telegram_chat_id:
-                telegram_client.send_message(f"{icon} Check {check_type} completed successfully", chat_id=user.telegram_chat_id)
+                if (hasattr(user, 'telegram_chat_id') and user.telegram_chat_id and getattr(user, 'telegram_notifications_enabled', False)):
+                    telegram_client.send_message(f"{icon} Check {check_type} completed successfully", chat_id=user.telegram_chat_id)
     except Exception as e:
         error_msg = f"Error during check {check_type} for user {user.username}: {str(e)}"
         logger.error(error_msg)
         if hasattr(user, 'telegram_chat_id') and user.telegram_chat_id:
-            telegram_client.send_message(f"❌ {error_msg}", chat_id=user.telegram_chat_id)
+            if (hasattr(user, 'telegram_chat_id') and user.telegram_chat_id and getattr(user, 'telegram_notifications_enabled', False)):
+                telegram_client.send_message(f"❌ {error_msg}", chat_id=user.telegram_chat_id)
 
 def perform_check(check_type):
     """
