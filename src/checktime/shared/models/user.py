@@ -6,6 +6,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import UserMixin
 
 from checktime.shared.db import db, TimestampMixin
+from checktime.utils.crypto import encrypt_string, decrypt_string
 
 class User(UserMixin, db.Model, TimestampMixin):
     id = db.Column(db.Integer, primary_key=True)
@@ -16,7 +17,7 @@ class User(UserMixin, db.Model, TimestampMixin):
     
     # CheckJC credentials
     checkjc_username = db.Column(db.String(120), nullable=True)
-    checkjc_password_plain = db.Column("checkjc_password", db.String(256), nullable=True)
+    checkjc_password_encrypted = db.Column("checkjc_password", db.String(512), nullable=True)
     auto_checkin_enabled = db.Column(db.Boolean, default=True)
     
     # Telegram settings
@@ -34,19 +35,24 @@ class User(UserMixin, db.Model, TimestampMixin):
         return check_password_hash(self.password_hash, password) 
         
     def set_checkjc_password(self, password):
-        """Store the CheckJC password in plain text."""
-        self.checkjc_password_plain = password
+        """Store the CheckJC password encrypted."""
+        if password:
+            self.checkjc_password_encrypted = encrypt_string(password)
+        else:
+            self.checkjc_password_encrypted = None
         
     @property
     def checkjc_password(self):
-        """Returns the CheckJC password."""
-        return self.checkjc_password_plain
+        """Returns the decrypted CheckJC password."""
+        if self.checkjc_password_encrypted:
+            return decrypt_string(self.checkjc_password_encrypted)
+        return None
         
     def has_checkjc_configured(self):
         """Check if the user has CheckJC credentials configured."""
         return (
             self.checkjc_username is not None and 
-            self.checkjc_password_plain is not None and
+            self.checkjc_password_encrypted is not None and
             self.auto_checkin_enabled
         )
         

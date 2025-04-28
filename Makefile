@@ -8,6 +8,10 @@ DOCKERFILE=Dockerfile
 # Obtiene automáticamente el último tag
 TAG=$(shell git describe --tags --abbrev=0)
 
+# 🔵 Build para develop
+publish-develop:
+	docker-compose -f docker-compose.develop.yml down && docker-compose -f docker-compose.develop.yml build --no-cache && docker-compose -f docker-compose.develop.yml up
+
 # 🔵 Build para latest
 build-latest:
 	docker buildx build --platform $(PLATFORM) -t $(IMAGE_NAME):latest .
@@ -29,3 +33,8 @@ publish-latest: build-latest push-latest
 
 # 🔵 Build + Push de release (etiquetado por tag) de un tirón
 publish-release: build-release push-release
+
+# 🔵 NUEVO: Actualizar 'latest' apuntando a la última versión
+tag-latest:
+	docker tag $(IMAGE_NAME):$(TAG) $(IMAGE_NAME):latest
+	docker push $(IMAGE_NAME):latest
