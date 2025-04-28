@@ -30,15 +30,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Crear y establecer el directorio de trabajo
 WORKDIR /app
 
-# Instalar dependencias de Python
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
 # Copiar el resto del código
 COPY . .
 
-# Instalar el paquete en modo editable
-RUN pip install -e .
+# Instalar el paquete en modo editable (y todas las dependencias)
+RUN pip install --no-cache-dir -e .
 
 # Asegurarse de que el módulo está en el PYTHONPATH
 ENV PYTHONPATH=/app
