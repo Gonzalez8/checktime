@@ -42,15 +42,19 @@ def create_app(test_config=None):
         db.create_all()
     
     # Register blueprints
-    from checktime.web.auth import auth_bp
-    from checktime.web.dashboard import dashboard_bp
-    from checktime.web.holidays import holidays_bp
-    from checktime.web.schedules import schedules_bp
+    from checktime.web.routes.auth import auth_bp
+    from checktime.web.routes.dashboard import dashboard_bp
+    from checktime.web.routes.holidays import holidays_bp
+    from checktime.web.routes.schedules import schedules_bp
+    from checktime.web.routes.overrides import bp as overrides_bp
+    from checktime.web.routes.translations import translations_bp
     
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(holidays_bp)
     app.register_blueprint(schedules_bp)
+    app.register_blueprint(overrides_bp)
+    app.register_blueprint(translations_bp)
     
     @login_manager.user_loader
     def load_user(user_id):

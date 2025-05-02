@@ -67,4 +67,10 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<!-- Load JavaScript files -->
+<script src="{{ url_for('static', filename='js/i18n.js') }}"></script>
+<script src="{{ url_for('static', filename='js/schedules.js') }}"></script>
 {% endblock %} 

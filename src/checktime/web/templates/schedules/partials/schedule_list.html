@@ -1,0 +1,71 @@
+{% if periods %}
+<div class="table-responsive">
+    <table class="table table-striped table-hover">
+        <thead>
+            <tr>
+                <th>{{ _('name') }}</th>
+                <th>{{ _('start_date') }}</th>
+                <th>{{ _('end_date') }}</th>
+                <th>{{ _('status') }}</th>
+                <th>{{ _('actions') }}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for period in periods %}
+            <tr>
+                <td>{{ period.name }}</td>
+                <td>{{ period.start_date.strftime('%Y-%m-%d') }}</td>
+                <td>{{ period.end_date.strftime('%Y-%m-%d') }}</td>
+                <td>
+                    {% if period.is_active %}
+                    <span class="badge bg-success">{{ _('active') }}</span>
+                    {% else %}
+                    <span class="badge bg-secondary">{{ _('inactive') }}</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <div class="btn-group btn-group-sm">
+                        <a href="{{ url_for('schedules.edit', period_id=period.id) }}" class="btn btn-outline-primary">
+                            <i class="bi bi-pencil"></i>
+                        </a>
+                        <a href="{{ url_for('schedules.edit_days', period_id=period.id) }}" class="btn btn-outline-primary">
+                            <i class="bi bi-calendar-week"></i>
+                        </a>
+                        <button type="button" class="btn btn-outline-danger" 
+                                data-bs-toggle="modal" data-bs-target="#deleteModal{{ period.id }}">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                    
+                    <!-- Delete Modal -->
+                    <div class="modal fade" id="deleteModal{{ period.id }}" tabindex="-1" aria-hidden="true">
+                        <div class="modal-dialog">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title">{{ _('confirm_delete') }}</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                </div>
+                                <div class="modal-body">
+                                    {{ _('confirm_delete_period') }} <strong>{{ period.name }}</strong>?
+                                    <p class="text-danger mt-2">{{ _('delete_period_warning') }}</p>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('cancel') }}</button>
+                                    <form action="{{ url_for('schedules.delete', period_id=period.id) }}" method="post">
+                                        <button type="submit" class="btn btn-danger">{{ _('delete') }}</button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="alert alert-info">
+    <i class="bi bi-info-circle"></i> {{ _('no_schedule_periods') }}
+</div>
+{% endif %} 
