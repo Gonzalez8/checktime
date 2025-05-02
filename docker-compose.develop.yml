@@ -3,6 +3,7 @@ version: "3.8"
 services:
   db:
     image: postgres:15-alpine
+    platform: linux/arm64/v8
     container_name: checktime-db
     env_file:
       - .env
@@ -25,6 +26,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      platforms:
+        - linux/arm64
     container_name: checktime-db-init
     depends_on:
       db:
@@ -40,6 +43,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      platforms:
+        - linux/arm64
     container_name: checktime-web
     depends_on:
       db-init:
@@ -60,6 +65,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      platforms:
+        - linux/arm64
     container_name: checktime-bot
     depends_on:
       db-init:
@@ -78,6 +85,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      platforms:
+        - linux/arm64
     container_name: checktime-scheduler
     depends_on:
       db-init:

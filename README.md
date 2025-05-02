@@ -17,6 +17,7 @@ Automated check-in and check-out system for CheckJC with web management and Tele
   - [2. Installation with Docker (Recommended)](#2-installation-with-docker-recommended)
   - [3. Installation without Docker (Development)](#3-installation-without-docker-development)
 - [Using the Web Interface](#using-the-web-interface)
+- [Interactive Calendar](#interactive-calendar)
 - [License](#license)
 - [Additional Notes](#additional-notes)
 
@@ -28,8 +29,11 @@ Automated check-in and check-out system for CheckJC with web management and Tele
 - Holiday detection (national, regional, local)
 - Multi-user support with personal CheckJC credentials
 - Telegram bot integration for notifications and remote management
-- Web dashboard for full configuration
+- Modern web dashboard with interactive calendar and dark mode support
+- Real-time calendar updates without page reloads
+- Visual distinction between working days, holidays, and overrides
 - Support for custom schedules and holiday management
+- Responsive design optimized for mobile devices
 
 ---
 
@@ -182,6 +186,46 @@ Before starting, **make sure you configure your environment variables**.
    - Set check-in/check-out schedules
    - Configure Telegram notifications
    - Enable or disable automatic operations per user
+
+---
+
+## Interactive Calendar
+
+The modernized dashboard features a powerful interactive calendar system with numerous enhancements:
+
+### Visual Features
+- **Color-Coded Events**: Working days, holidays, and schedule overrides are clearly distinguished with different colors
+- **Hover Effects**: Visual feedback when hovering over calendar cells
+- **Smooth Transitions**: Animations when switching between months
+- **Loading Indicators**: Skeleton loading placeholders during data fetching
+- **Tooltip Information**: Detailed information appears when hovering over events
+
+### Interactive Functionality
+- **One-Click Navigation**: Easy switching between months
+- **Direct Event Creation**: Click on any day to add holidays or schedule overrides
+- **Modal Interfaces**: Streamlined dialogs for creating and editing events
+- **Toast Notifications**: Non-intrusive feedback when actions are completed
+
+### Calendar Actions
+- **Add Holidays**: Click any day to add a holiday with description
+- **Create Overrides**: Modify scheduled check-in/check-out times for specific days
+- **Quick View**: See your full month schedule at a glance
+- **Month Navigation**: Move between months with previous/next buttons
+- **Today Button**: Quick return to current month
+
+### Real-Time Updates
+- **AJAX Loading**: Calendar updates without full page reloads
+- **Partial Rendering**: Only the necessary content changes when updating
+- **Consistent State**: Calendar maintains its state during interactions
+- **Automatic Refresh**: Holiday counts and statistics update automatically
+
+### Responsive Design
+- **Mobile Optimization**: Calendar adapts to different screen sizes
+- **Touch-Friendly**: Large tap targets for mobile users
+- **Compact View**: Simplified display on smaller screens
+- **Consistent Experience**: Core functionality works across all devices
+
+The calendar system is central to CheckTime, providing an intuitive interface for managing your automated check-in/check-out schedule with visual distinction between regular schedule days, holidays, and special overrides.
 
 ---
 

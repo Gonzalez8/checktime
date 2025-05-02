@@ -1,74 +1,94 @@
-<div class="d-flex justify-content-between align-items-center py-2 flex-wrap mb-2">
-    <h5 class="mb-2 mb-md-0"><i class="bi bi-calendar3"></i> {{ current_month }}</h5>
-    <div class="d-flex gap-1">
-        <button data-year="{{ prev_year }}" data-month="{{ prev_month }}" class="btn btn-sm btn-primary calendar-nav">
-            <i class="bi bi-chevron-left"></i><span class="d-none d-md-inline"> {{ _('previous') }}</span>
-        </button>
-        {% if not is_current_month %}
-        <button data-year="{{ current_year }}" data-month="{{ current_month_num }}" class="btn btn-sm btn-primary calendar-nav">
-            <span class="d-none d-md-inline">{{ _('today') }}</span><span class="d-inline d-md-none"><i class="bi bi-calendar-event"></i></span>
-        </button>
-        {% endif %}
-        <button data-year="{{ next_year }}" data-month="{{ next_month }}" class="btn btn-sm btn-primary calendar-nav">
-            <span class="d-none d-md-inline">{{ _('next') }} </span><i class="bi bi-chevron-right"></i>
-        </button>
+<div class="card-header bg-primary text-white">
+    <div class="d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-calendar3"></i> {{ current_month }}</h5>
+        <div class="d-flex gap-1">
+            <button data-year="{{ prev_year }}" data-month="{{ prev_month }}" class="btn btn-sm btn-light calendar-nav">
+                <i class="bi bi-chevron-left"></i><span class="d-none d-md-inline"> {{ _('previous') }}</span>
+            </button>
+            {% if not is_current_month %}
+            <button data-year="{{ current_year }}" data-month="{{ current_month_num }}" class="btn btn-sm btn-light calendar-nav">
+                <span class="d-none d-md-inline">{{ _('today') }}</span><span class="d-inline d-md-none"><i class="bi bi-calendar-event"></i></span>
+            </button>
+            {% endif %}
+            <button data-year="{{ next_year }}" data-month="{{ next_month }}" class="btn btn-sm btn-light calendar-nav">
+                <span class="d-none d-md-inline">{{ _('next') }} </span><i class="bi bi-chevron-right"></i>
+            </button>
+        </div>
     </div>
 </div>
-
-<div class="table-responsive">
-    <table class="table table-bordered text-center mb-1">
-        <thead class="table-light">
-            <tr>
-                <th class="py-1 cal-day">{{ _('day_mon') }}</th>
-                <th class="py-1 cal-day">{{ _('day_tue') }}</th>
-                <th class="py-1 cal-day">{{ _('day_wed') }}</th>
-                <th class="py-1 cal-day">{{ _('day_thu') }}</th>
-                <th class="py-1 cal-day">{{ _('day_fri') }}</th>
-                <th class="py-1 cal-day bg-light text-muted">{{ _('day_sat') }}</th>
-                <th class="py-1 cal-day bg-light text-muted">{{ _('day_sun') }}</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for week in calendar_data %}
-            <tr>
-                {% for day in week %}
-                {% set is_weekend = loop.index > 5 %}
-                <td class="cal-cell {% if day.is_today %}bg-light border border-primary{% elif is_weekend %}bg-light text-muted{% endif %}">
-                    {% if day.day %}
-                    <div class="cal-day-number">{{ day.day }}</div>
-                    
-                    {% if day.is_holiday %}
-                    <div class="cal-event holiday" title="{{ day.holiday_name }}">
-                        {{ day.holiday_name }}
-                    </div>
-                    {% elif day.is_working_day %}
-                    <div class="cal-event-group">
-                        <div class="cal-event check-in" title="{{ day.period_name }}">
-                            <i class="bi bi-arrow-down-circle"></i> {{ day.check_in_time|default('09:00') }}
+<div class="card-body p-2">
+    <div class="table-responsive">
+        <table class="table table-bordered text-center mb-1">
+            <thead class="table-light">
+                <tr>
+                    <th class="py-1 cal-day">{{ _('day_mon') }}</th>
+                    <th class="py-1 cal-day">{{ _('day_tue') }}</th>
+                    <th class="py-1 cal-day">{{ _('day_wed') }}</th>
+                    <th class="py-1 cal-day">{{ _('day_thu') }}</th>
+                    <th class="py-1 cal-day">{{ _('day_fri') }}</th>
+                    <th class="py-1 cal-day bg-light text-muted">{{ _('day_sat') }}</th>
+                    <th class="py-1 cal-day bg-light text-muted">{{ _('day_sun') }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for week in calendar_data %}
+                <tr>
+                    {% for day in week %}
+                    {% set is_weekend = loop.index > 5 %}
+                    <td class="cal-cell {% if day.is_today %}bg-light border border-primary{% elif is_weekend %}bg-light text-muted{% endif %}"
+                        {% if day.date %}data-date="{{ day.date }}"{% endif %}
+                        {% if day.day %}data-debug='{{ day|tojson|safe }}'{% endif %}>
+                        {% if day.day %}
+                        <div class="cal-day-number">{{ day.day }}</div>
+                        
+                        {% if day.is_holiday %}
+                        <div class="cal-event holiday" title="{{ day.holiday_name }}">
+                            {{ day.holiday_name }}
                         </div>
-                        <div class="cal-event check-out">
-                            <i class="bi bi-arrow-up-circle"></i> {{ day.check_out_time|default('17:00') }}
+                        {% elif day.is_override %}
+                        <div class="cal-event-group">
+                            <div class="cal-event override" title="{{ _('override') }}">
+                                <i class="bi bi-arrow-down-circle"></i> {{ day.check_in_time }}
+                            </div>
+                            <div class="cal-event override-out">
+                                <i class="bi bi-arrow-up-circle"></i> {{ day.check_out_time }}
+                            </div>
+                            {% if day.override_description %}
+                            <div class="cal-event override-description" title="{{ day.override_description }}">
+                                {{ day.override_description }}
+                            </div>
+                            {% endif %}
                         </div>
-                        {% if day.period_name %}
-                        <div class="cal-event period" title="{{ day.period_name }}">
-                            {{ day.period_name }}
+                        {% elif day.is_working_day %}
+                        <div class="cal-event-group">
+                            <div class="cal-event check-in" title="{{ day.period_name }}">
+                                <i class="bi bi-arrow-down-circle"></i> {{ day.check_in_time|default('09:00') }}
+                            </div>
+                            <div class="cal-event check-out">
+                                <i class="bi bi-arrow-up-circle"></i> {{ day.check_out_time|default('17:00') }}
+                            </div>
+                            {% if day.period_name %}
+                            <div class="cal-event period" title="{{ day.period_name }}">
+                                {{ day.period_name }}
+                            </div>
+                            {% endif %}
                         </div>
                         {% endif %}
-                    </div>
-                    {% endif %}
-                    {% endif %}
-                </td>
+                        {% endif %}
+                    </td>
+                    {% endfor %}
+                </tr>
                 {% endfor %}
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</div>
+            </tbody>
+        </table>
+    </div>
 
-<div class="d-flex mt-1 justify-content-end flex-wrap">
-    <span class="badge bg-success me-2 mb-1">{{ _('working_day') }}</span>
-    <span class="badge bg-info me-2 mb-1">{{ _('holiday') }}</span>
-    <span class="badge bg-light text-dark me-2 mb-1">{{ _('weekend') }}</span>
+    <div class="d-flex mt-1 justify-content-end flex-wrap">
+        <span class="badge bg-success me-2 mb-1">{{ _('working_day') }}</span>
+        <span class="badge bg-warning text-dark me-2 mb-1">{{ _('override') }}</span>
+        <span class="badge bg-info me-2 mb-1">{{ _('holiday') }}</span>
+        <span class="badge bg-light text-dark me-2 mb-1">{{ _('weekend') }}</span>
+    </div>
 </div>
 
 <style>
@@ -83,6 +103,7 @@
         position: relative;
         padding: 2px !important;
         overflow: hidden;
+        cursor: pointer;
     }
     
     .cal-day-number {
@@ -138,6 +159,45 @@
         font-size: 0.65rem;
     }
     
+    .cal-event.override {
+        background-color: var(--bs-warning);
+        color: var(--bs-dark);
+        border-top-left-radius: 3px;
+        border-top-right-radius: 3px;
+        border-bottom-left-radius: 0;
+        border-bottom-right-radius: 0;
+    }
+    
+    .cal-event.override-out {
+        background-color: var(--bs-warning);
+        color: var(--bs-dark);
+        border-top-left-radius: 0;
+        border-top-right-radius: 0;
+        border-bottom-left-radius: 3px;
+        border-bottom-right-radius: 3px;
+    }
+    
+    .cal-event.override-description {
+        background-color: var(--bs-warning);
+        color: var(--bs-dark);
+        margin-top: 1px;
+        font-size: 0.65rem;
+        opacity: 0.9;
+    }
+    
+    /* Botones en el card-header */
+    .card-header .btn-light {
+        background-color: rgba(255, 255, 255, 0.2);
+        border-color: rgba(255, 255, 255, 0.3);
+        color: white;
+    }
+    
+    .card-header .btn-light:hover {
+        background-color: rgba(255, 255, 255, 0.3);
+        border-color: rgba(255, 255, 255, 0.4);
+        color: white;
+    }
+    
     /* Estilos para pantallas pequeñas */
     @media (max-width: 767.98px) {
         .cal-cell {
@@ -176,12 +236,13 @@
             margin-bottom: 0;
         }
     }
-</style>
-
-<script>
-    // Initialize Bootstrap tooltips
-    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[title]'));
-    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-        return new bootstrap.Tooltip(tooltipTriggerEl);
-    });
-</script> 
+    
+    .cal-cell:hover {
+        background-color: rgba(0,0,0,0.05);
+    }
+    
+    /* Ajustes para card-body */
+    .card-body.p-2 .table {
+        margin-bottom: 0.5rem;
+    }
+</style> 

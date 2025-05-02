@@ -3,6 +3,7 @@ Schedule models for CheckTime.
 """
 
 from checktime.shared.db import db, TimestampMixin
+from sqlalchemy import UniqueConstraint
 
 class SchedulePeriod(db.Model, TimestampMixin):
     id = db.Column(db.Integer, primary_key=True)
@@ -29,4 +30,22 @@ class DaySchedule(db.Model, TimestampMixin):
         return days[self.day_of_week]
     
     def __repr__(self):
-        return f"<DaySchedule {self.day_name}: {self.check_in_time} - {self.check_out_time}>" 
+        return f"<DaySchedule {self.day_name}: {self.check_in_time} - {self.check_out_time}>"
+
+class DayOverride(db.Model, TimestampMixin):
+    """
+    Represents a schedule override for a specific date and user.
+    This takes precedence over the regular DaySchedule.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    date = db.Column(db.Date, nullable=False)
+    check_in_time = db.Column(db.String(5), nullable=False)  # Format: "09:00"
+    check_out_time = db.Column(db.String(5), nullable=False)  # Format: "18:00"
+    description = db.Column(db.String(200))
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    
+    # Ensure only one override per user per date
+    __table_args__ = (UniqueConstraint('user_id', 'date', name='uq_user_date_override'),)
+    
+    def __repr__(self):
+        return f"<DayOverride {self.date}: {self.check_in_time} - {self.check_out_time}>" 
