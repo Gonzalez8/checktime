@@ -141,7 +141,7 @@
             <div class="card-header bg-primary text-white">
                 <h5 class="mb-0"><i class="bi bi-calendar-event"></i> {{ _('upcoming_holidays') }}</h5>
             </div>
-            <div class="card-body">
+            <div class="card-body" id="upcoming-holidays-container">
                 {% if upcoming_holidays %}
                 <ul class="list-group">
                     {% for holiday in upcoming_holidays %}
@@ -162,9 +162,9 @@
                 </div>
                 {% endif %}
                 <div class="mt-3">
-                    <a href="{{ url_for('holidays.add') }}" class="btn btn-sm btn-primary">
+                    <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addHolidayModal">
                         <i class="bi bi-plus-circle"></i> {{ _('add_holiday') }}
-                    </a>
+                    </button>
                     <a href="{{ url_for('holidays.index') }}" class="btn btn-sm btn-outline-primary">
                         <i class="bi bi-list"></i> {{ _('view_all') }}
                     </a>
@@ -223,7 +223,13 @@
                     <div class="col-6 mb-3">
                         <div class="card bg-light">
                             <div class="card-body py-3">
+                                {% if days_this_week is defined and days_this_week > 0 %}
                                 <h2 class="card-title">{{ days_this_week }}</h2>
+                                {% elif current_schedule %}
+                                <h2 class="card-title">0</h2>
+                                {% else %}
+                                <h2 class="card-title">-</h2>
+                                {% endif %}
                                 <p class="card-text text-muted">{{ _('working_days_week') }}</p>
                             </div>
                         </div>
@@ -245,38 +251,170 @@
 <div id="calendar-data" 
     data-current-year="{{ current_year|default('') }}"
     data-current-month="{{ current_month|default('') }}"
+    data-holiday-api-url="{{ api_holiday_url }}"
+    data-calendar-partial-url="{{ calendar_partial_url }}"
     style="display: none;">
+</div>
+
+<!-- Create Override Modal -->
+<div class="modal fade" id="createOverrideModal" tabindex="-1" aria-labelledby="createOverrideModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="createOverrideModalLabel">{{ _('create_override') }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="createOverrideForm">
+                <div class="modal-body">
+                    <input type="hidden" name="date" id="createOverrideDate">
+                    <div class="mb-3">
+                        <label for="createCheckInTime" class="form-label">{{ _('check_in_time') }}</label>
+                        <input type="time" class="form-control" id="createCheckInTime" name="check_in_time" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="createCheckOutTime" class="form-label">{{ _('check_out_time') }}</label>
+                        <input type="time" class="form-control" id="createCheckOutTime" name="check_out_time" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="createDescription" class="form-label">{{ _('description') }}</label>
+                        <textarea class="form-control" id="createDescription" name="description" rows="2"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('cancel') }}</button>
+                    <button type="button" class="btn btn-primary" id="saveCreateOverride">{{ _('create') }}</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Override Modal -->
+<div class="modal fade" id="editOverrideModal" tabindex="-1" aria-labelledby="editOverrideModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editOverrideModalLabel">{{ _('edit_override') }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="editOverrideForm">
+                <div class="modal-body">
+                    <input type="hidden" name="date" id="editOverrideDate">
+                    <div class="mb-3">
+                        <label for="editCheckInTime" class="form-label">{{ _('check_in_time') }}</label>
+                        <input type="time" class="form-control" id="editCheckInTime" name="check_in_time" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editCheckOutTime" class="form-label">{{ _('check_out_time') }}</label>
+                        <input type="time" class="form-control" id="editCheckOutTime" name="check_out_time" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editDescription" class="form-label">{{ _('description') }}</label>
+                        <textarea class="form-control" id="editDescription" name="description" rows="2"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-danger me-auto" id="deleteOverrideBtn">{{ _('delete') }}</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('cancel') }}</button>
+                    <button type="button" class="btn btn-primary" id="saveEditOverride">{{ _('save') }}</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Select Day Type Modal -->
+<div class="modal fade" id="selectDayTypeModal" tabindex="-1" aria-labelledby="selectDayTypeModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="selectDayTypeModalLabel"><i class="bi bi-calendar-plus"></i> {{ _('select_day_type') }}</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-center">
+                <input type="hidden" id="selectedDate">
+                <div class="row">
+                    <div class="col-6">
+                        <button id="createOverrideBtn" class="btn btn-warning btn-lg w-100 mb-2">
+                            <i class="bi bi-clipboard-plus fs-3 d-block mb-2"></i>
+                            {{ _('create_override') }}
+                        </button>
+                    </div>
+                    <div class="col-6">
+                        <button id="createHolidayBtn" class="btn btn-info btn-lg text-white w-100">
+                            <i class="bi bi-calendar-heart fs-3 d-block mb-2"></i>
+                            {{ _('add_holiday') }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('cancel') }}</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Holiday Modal -->
+<div class="modal fade" id="editHolidayModal" tabindex="-1" aria-labelledby="editHolidayModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title" id="editHolidayModalLabel"><i class="bi bi-calendar-heart"></i> {{ _('edit_holiday') }}</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editHolidayForm">
+                    <input type="hidden" id="editHolidayDate" name="date" required>
+                    <div class="mb-3">
+                        <label for="editHolidayDescription" class="form-label">{{ _('description') }}</label>
+                        <input type="text" class="form-control" id="editHolidayDescription" name="description" placeholder="{{ _('holiday_description_placeholder') }}" required>
+                        <div id="editHolidayDescriptionFeedback" class="invalid-feedback"></div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-danger me-auto" id="deleteHolidayBtn">{{ _('delete') }}</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('cancel') }}</button>
+                <button type="button" class="btn btn-primary" id="saveEditHoliday">{{ _('save') }}</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Override the Add Holiday Modal to include the date parameter -->
+<div class="modal fade" id="addHolidayModal" tabindex="-1" aria-labelledby="addHolidayModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="addHolidayModalLabel"><i class="bi bi-calendar-plus"></i> {{ _('add_holiday') }}</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addHolidayForm">
+                    <div class="mb-3">
+                        <label for="holidayDate" class="form-label">{{ _('date') }}</label>
+                        <input type="date" class="form-control" id="holidayDate" name="date" required>
+                        <div id="holidayDateFeedback" class="invalid-feedback"></div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="holidayDescription" class="form-label">{{ _('description') }}</label>
+                        <input type="text" class="form-control" id="holidayDescription" name="description" placeholder="{{ _('holiday_description_placeholder') }}" required>
+                        <div id="holidayDescriptionFeedback" class="invalid-feedback"></div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('cancel') }}</button>
+                <button type="button" class="btn btn-primary" id="saveHoliday">{{ _('btn_save_holiday') }}</button>
+            </div>
+        </div>
+    </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
-<script>
-    // Simplified function to load the calendar
-    function loadCalendar(year, month) {
-        const url = "{{ url_for('dashboard.calendar_partial', year=0, month=0) }}".replace('/0/0', '/' + year + '/' + month);
-        
-        $("#calendar-container").addClass("loading");
-        $("#calendar-container").load(url, function(response, status, xhr) {
-            $("#calendar-container").removeClass("loading");
-            if (status == "error") {
-                $(this).html("<div class='alert alert-danger mt-3'>{{ _('error_loading_calendar') }}</div>");
-            }
-        });
-    }
-
-    // Simple initialization
-    $(document).ready(function() {
-        const currentYear = parseInt($("#calendar-data").attr("data-current-year")) || new Date().getFullYear();
-        const currentMonth = parseInt($("#calendar-data").attr("data-current-month")) || new Date().getMonth() + 1;
-        
-        // Load calendar
-        loadCalendar(currentYear, currentMonth);
-        
-        // Navigation buttons
-        $(document).on('click', '.calendar-nav', function() {
-            loadCalendar($(this).data('year'), $(this).data('month'));
-            return false;
-        });
-    });
-</script>
+<!-- Load JavaScript files -->
+<script src="{{ url_for('static', filename='js/i18n.js') }}"></script>
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 {% endblock %} 

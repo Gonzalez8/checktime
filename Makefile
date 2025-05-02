@@ -10,7 +10,7 @@ TAG=$(shell git describe --tags --abbrev=0)
 
 # 🔵 Build para develop
 publish-develop:
-	docker-compose -f docker-compose.develop.yml down && docker-compose -f docker-compose.develop.yml build --no-cache && docker-compose -f docker-compose.develop.yml up
+	docker-compose -f docker-compose.develop.yml down && docker-compose -f docker-compose.develop.yml build  && docker-compose -f docker-compose.develop.yml up -d
 
 # 🔵 Build para latest
 build-latest:
