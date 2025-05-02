@@ -19,7 +19,8 @@ setup(
         "email-validator>=2.1.0",
         "icalendar>=6.1.3",
         "psycopg2-binary>=2.9.9",
-        "alembic>=1.13.1"
+        "alembic>=1.13.1",
+        "cryptography>=41.0.1"
     ],
     python_requires=">=3.8",
     entry_points={

@@ -19,7 +19,7 @@
     <div class="card-header bg-primary text-white">
         <h5 class="mb-0"><i class="bi bi-list-check"></i> {{ _('schedule_periods') }}</h5>
     </div>
-    <div class="card-body">
+    <div class="card-body schedule-list-container">
         {% if periods %}
         <div class="table-responsive">
             <table class="table table-striped table-hover">
@@ -93,4 +93,10 @@
         {% endif %}
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<!-- Load JavaScript files -->
+<script src="{{ url_for('static', filename='js/i18n.js') }}"></script>
+<script src="{{ url_for('static', filename='js/schedules.js') }}"></script>
 {% endblock %} 

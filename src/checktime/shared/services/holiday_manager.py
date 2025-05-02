@@ -3,7 +3,7 @@ Holiday management service for CheckTime application.
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from typing import Set, Optional, List, Tuple, Dict, Any
 
 from checktime.shared.repository.holiday_repository import HolidayRepository
@@ -249,6 +249,32 @@ class HolidayManager:
             logger.error(error_msg)
             return None
     
+    def get_holiday_by_date(self, target_date: date) -> Optional[Holiday]:
+        """
+        Get a holiday by date for the current user.
+        
+        Args:
+            target_date (date): The date to check for a holiday
+            
+        Returns:
+            Optional[Holiday]: Holiday if found, None otherwise
+        """
+        try:
+            if self.user_id is None:
+                logger.warning("No user_id provided for get_holiday_by_date")
+                return None
+                
+            holiday = self.repository.get_by_date(target_date, self.user_id)
+            if holiday:
+                logger.info(f"Found holiday for date {target_date} and user {self.user_id}")
+            else:
+                logger.info(f"No holiday found for date {target_date} and user {self.user_id}")
+            return holiday
+        except Exception as e:
+            error_msg = f"Error getting holiday by date: {e}"
+            logger.error(error_msg)
+            return None
+    
     def update_holiday(self, holiday_id: int, date: datetime.date, description: str, user_id: Optional[int] = None) -> bool:
         """
         Update a holiday.
@@ -292,12 +318,12 @@ class HolidayManager:
     
     def delete_holiday_by_id(self, holiday_id: int, user_id: Optional[int] = None) -> bool:
         """
-        Delete a holiday by ID.
+        Delete a holiday from the database by ID.
         
         Args:
-            holiday_id (int): ID of the holiday to delete
-            user_id (Optional[int]): User ID to filter
-            
+            holiday_id (int): Holiday ID
+            user_id (Optional[int]): User ID to filter holidays
+        
         Returns:
             bool: True if successful, False otherwise
         """
@@ -308,16 +334,17 @@ class HolidayManager:
                 logger.warning("No user_id provided for delete_holiday_by_id")
                 return False
                 
-            # Get the holiday to delete
+            # Check if the holiday exists for this user
             holiday = self.repository.get_by_id(holiday_id, user_id)
             if not holiday:
-                logger.warning(f"No holiday found with ID {holiday_id} for user {user_id}")
+                logger.info(f"Holiday with ID {holiday_id} does not exist for user {user_id}")
                 return False
             
             # Delete the holiday
             self.repository.delete(holiday)
-            logger.info(f"Deleted holiday with ID {holiday_id} for user {user_id}")
+            logger.info(f"Holiday with ID {holiday_id} deleted for user {user_id}")
             return True
+            
         except Exception as e:
             error_msg = f"Error deleting holiday by ID: {e}"
             logger.error(error_msg)

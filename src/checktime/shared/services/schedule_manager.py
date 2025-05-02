@@ -7,6 +7,7 @@ from datetime import date
 from typing import List, Optional, Tuple, Dict, Any
 
 from checktime.shared.repository.schedule_repository import SchedulePeriodRepository, DayScheduleRepository
+from checktime.shared.repository.day_override_repository import DayOverrideRepository
 from checktime.shared.models.schedule import SchedulePeriod, DaySchedule
 
 # Create logger
@@ -495,6 +496,7 @@ class ScheduleManager:
     def get_schedule_times_for_date(self, target_date: date, user_id: Optional[int] = None) -> Tuple[Optional[str], Optional[str]]:
         """
         Get check-in and check-out times for a specific date.
+        Prioritizes DayOverride over regular schedule.
         
         Args:
             target_date (date): The date to check
@@ -510,7 +512,14 @@ class ScheduleManager:
                 logger.warning("No user_id provided for get_schedule_times_for_date")
                 return None, None
                 
-            # Get active period for the date
+            # First check for override
+            override_repo = DayOverrideRepository()
+            override = override_repo.get_by_user_and_date(user_id, target_date)
+            if override:
+                logger.info(f"Found override for date {target_date}: {override.check_in_time} - {override.check_out_time}")
+                return override.check_in_time, override.check_out_time
+                
+            # If no override, get active period for the date
             active_period = self.get_active_period_for_date(target_date, user_id)
             if not active_period:
                 logger.info(f"No active period found for date {target_date} and user {user_id}")
