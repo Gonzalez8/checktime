@@ -295,11 +295,11 @@ function applyPreset(presetName) {
             
         case 'flexible':
             // Flexible schedule: Different hours each day
-            applySchedule(0, '08:00', '16:00'); // Monday
-            applySchedule(1, '09:00', '17:00'); // Tuesday
-            applySchedule(2, '08:30', '16:30'); // Wednesday
-            applySchedule(3, '09:00', '17:00'); // Thursday
-            applySchedule(4, '08:00', '14:00'); // Friday (short day)
+            applySchedule(0, '09:00', '18:00'); // Monday
+            applySchedule(1, '09:00', '18:00'); // Tuesday
+            applySchedule(2, '09:00', '18:00'); // Wednesday
+            applySchedule(3, '09:00', '18:00'); // Thursday
+            applySchedule(4, '08:00', '15:00'); // Friday (short day)
             
             // Clear weekend
             satToggle = document.getElementById('day_5_toggle');
