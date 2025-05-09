@@ -9,6 +9,7 @@ import schedule
 import time
 from datetime import datetime
 import threading
+import concurrent.futures
 
 from checktime.scheduler.checker import CheckJCClient
 from checktime.shared.config import get_log_level
@@ -136,64 +137,35 @@ def perform_check_for_user(user, check_type):
             if (hasattr(user, 'telegram_chat_id') and user.telegram_chat_id and getattr(user, 'telegram_notifications_enabled', False)):
                 telegram_client.send_message(f"❌ {error_msg}", chat_id=user.telegram_chat_id)
 
-def perform_check(check_type):
+def get_users_to_check_now():
     """
-    Perform the check-in/out process for all eligible users.
-    
-    Args:
-        check_type (str): Type of check ('in' or 'out')
+    Returns a list of (user, check_type) tuples for users who need to check in or out at the current time.
     """
     with app.app_context():
-        # Get all users that have CheckJC configured using UserManager
         users = user_manager.get_all_with_checkjc_configured()
-    
     if not users:
-        logger.info(f"No users with CheckJC configured. No {check_type} checks will be performed.")
-        return
-        
-    for user in users:
-        # Create a separate thread for each user's check
-        thread = threading.Thread(
-            target=perform_check_for_user,
-            args=(user, check_type)
-        )
-        thread.start()
+        return []
 
-def schedule_check():
-    """Check if it's time to perform check-in/out based on schedules for all users"""
-    with app.app_context():
-        # Get all users with CheckJC configured using UserManager
-        users = user_manager.get_all_with_checkjc_configured()
-    
-    if not users:
-        return
-        
     current_time = datetime.now().strftime("%H:%M")
-    
+    users_to_check = []
+
     for user in users:
         if not is_working_day(user.id):
             continue
-            
         check_in_time, check_out_time = get_schedule_times(user.id)
-        
-        # If no schedules defined, don't perform check
         if check_in_time is None or check_out_time is None:
             continue
-            
         if current_time == check_in_time:
-            # Create a separate thread for check-in
-            thread = threading.Thread(
-                target=perform_check_for_user,
-                args=(user, "in")
-            )
-            thread.start()
+            users_to_check.append((user, "in"))
         elif current_time == check_out_time:
-            # Create a separate thread for check-out
-            thread = threading.Thread(
-                target=perform_check_for_user,
-                args=(user, "out")
-            )
-            thread.start()
+            users_to_check.append((user, "out"))
+    return users_to_check
+
+def schedule_check():
+    """Check if it's time to perform check-in/out based on schedules for all users, and do it sequentially."""
+    users_to_check = get_users_to_check_now()
+    for user, check_type in users_to_check:
+        perform_check_for_user(user, check_type)
 
 def perform_check_in():
     """Perform the check-in process for all eligible users."""

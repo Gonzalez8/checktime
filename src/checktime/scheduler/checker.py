@@ -7,6 +7,8 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
+import tempfile
+import shutil
 
 from checktime.shared.config import get_selenium_timeout, get_chrome_options_args, get_simulation_mode, get_chrome_bin, get_chromedriver_bin
 
@@ -38,6 +40,9 @@ class CheckJCClient:
         options.binary_location = get_chrome_bin()
         for arg in get_chrome_options_args():
             options.add_argument(arg)
+        # Aislar perfil temporal único por usuario
+        self._tmp_profile = tempfile.mkdtemp(prefix=f"chrome_{self.username}_")
+        options.add_argument(f"--user-data-dir={self._tmp_profile}")
 
         service = Service(executable_path=get_chromedriver_bin())
         self.driver = webdriver.Chrome(service=service, options=options)
@@ -49,6 +54,9 @@ class CheckJCClient:
         if self.driver:
             self.driver.quit()
             logger.info(f"Driver de Chrome cerrado para {self.username}")
+        # Limpia el perfil temporal
+        if hasattr(self, "_tmp_profile"):
+            shutil.rmtree(self._tmp_profile, ignore_errors=True)
     
     def login(self):
         """Realiza el login en CheckJC."""
@@ -105,7 +113,7 @@ class CheckJCClient:
             raise
 
     def perform_check(self, check_type: str):
-        """Check in or check out."""
+        """Check in or check out, robust version."""
         if SIMULATION_MODE:
             time.sleep(1)
             now = datetime.now().strftime("%H:%M:%S")
@@ -118,19 +126,22 @@ class CheckJCClient:
                 EC.element_to_be_clickable((By.CSS_SELECTOR, "#btn-check, button.btn-check, button[id*='check'], button[class*='check']"))
             )
             self.driver.execute_script("arguments[0].click();", btn_fichar)
-            
-            self.wait.until(
-                EC.any_of(
-                    EC.text_to_be_present_in_element((By.CSS_SELECTOR, ".alert, .message, .notification"), "registrado"),
-                    EC.staleness_of(btn_fichar),
-                    EC.presence_of_element_located((By.CSS_SELECTOR, ".success, .confirm"))
+
+            # Espera a que aparezca el mensaje de éxito
+            try:
+                success = WebDriverWait(self.driver, 15).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, ".alert-success, .bubble.alert-success"))
                 )
-            )
-            
-            now = datetime.now().strftime("%H:%M:%S")
-            logger.info(f"Check {check_type} completed for {self.username} successfully")
-            return True
-        
+                if "Resultado del fichaje" in self.driver.page_source:
+                    logger.info(f"Check {check_type} completed for {self.username} successfully")
+                    return True
+                else:
+                    logger.error(f"Check {check_type} for {self.username} - Success message not found. HTML: {self.driver.page_source[:1000]}")
+                    raise Exception("Success message not found after check")
+            except TimeoutException:
+                logger.error(f"Check {check_type} for {self.username} - Timeout waiting for success message. HTML: {self.driver.page_source[:1000]}")
+                raise Exception("Timeout waiting for success message after check")
+
         except Exception as e:
             error_msg = f"❌ Error during Check {check_type} for {self.username}: {e}"
             logger.error(error_msg)
