@@ -1,4 +1,4 @@
-version: "3.8" 
+version: "3.8"
 
 services:
   db:
@@ -13,7 +13,7 @@ services:
     volumes:
       - ${DB_STORAGE_PATH}:/var/lib/postgresql/data
     ports:
-      - "${POSTGRES_DB_PORT}:5432" 
+      - "${POSTGRES_DB_PORT}:5432"
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER}"]
       interval: 5s
@@ -21,63 +21,19 @@ services:
       retries: 5
     restart: unless-stopped
 
-  db-init:
+  app:
     image: ghcr.io/gonzalez8/checktime:${CHECK_TIME_VERSION}
-    container_name: checktime-db-init
-    depends_on:
-      db:
-        condition: service_healthy
-    env_file:
-      - .env
-    environment:
-      - PYTHONPATH=/app
-    command: python -m src.checktime.shared.db_init
-    restart: "no"
-
-  web:
-    image: ghcr.io/gonzalez8/checktime:${CHECK_TIME_VERSION}
-    container_name: checktime-web
-    depends_on:
-      db-init:
-        condition: service_completed_successfully
+    container_name: checktime-app
     env_file:
       - .env
     environment:
       - PYTHONPATH=/app
     volumes:
+      - ./config:/app/config
       - /var/log/checktime:/var/log/checktime
     ports:
       - "${WEB_PORT}:${PORT}"
-    command: python -m src.checktime.web.server
-    restart: unless-stopped
-
-  bot:
-    image: ghcr.io/gonzalez8/checktime:${CHECK_TIME_VERSION}
-    container_name: checktime-bot
     depends_on:
-      db-init:
-        condition: service_completed_successfully
-    env_file:
-      - .env
-    environment:
-      - PYTHONPATH=/app
-    volumes:
-      - /var/log/checktime:/var/log/checktime
-    command: python -m src.checktime.bot.listener
-    restart: unless-stopped
-
-  scheduler:
-    image: ghcr.io/gonzalez8/checktime:${CHECK_TIME_VERSION}
-    container_name: checktime-scheduler
-    depends_on:
-      db-init:
-        condition: service_completed_successfully
-    env_file:
-      - .env
-    environment:
-      - PYTHONPATH=/app
-      - SIMULATION_MODE=false
-    volumes:
-      - /var/log/checktime:/var/log/checktime
-    command: python -m src.checktime.scheduler.service
+      db:
+        condition: service_healthy
     restart: unless-stopped
