@@ -35,6 +35,7 @@ COPY . .
 
 # Instalar el paquete en modo editable (y todas las dependencias)
 RUN pip install --no-cache-dir -e .
+RUN pip install --no-cache-dir supervisor
 
 # Asegurarse de que el módulo está en el PYTHONPATH
 ENV PYTHONPATH=/app
@@ -50,5 +51,8 @@ RUN mkdir -p /app/config && chmod 777 /app/config
 # Exponer el puerto para la aplicación web
 EXPOSE 5000
 
+# Copiar el archivo supervisord.conf
+COPY supervisord.conf /etc/supervisord.conf
+
 # Comando por defecto
-CMD ["python", "-m", "src.checktime.web.server"]
+CMD ["supervisord", "-c", "/etc/supervisord.conf"]
