@@ -20,7 +20,8 @@ setup(
         "icalendar>=6.1.3",
         "psycopg2-binary>=2.9.9",
         "alembic>=1.13.1",
-        "cryptography>=41.0.1"
+        "cryptography>=41.0.1",
+        "gunicorn>=21.2.0"
     ],
     python_requires=">=3.8",
     entry_points={
