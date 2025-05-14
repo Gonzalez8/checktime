@@ -21,14 +21,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Crear el objeto Flask app para Gunicorn
+app = create_app()
+
 def main():
     """Start only the web server."""
     logger.info("Starting the web server...")
     
-    # Create the Flask application
-    app = create_app()
-    
-    # Run the web application
+    # app ya está creado arriba
     port = get_port()
     debug = os.environ.get('FLASK_ENV') == 'development'
     
