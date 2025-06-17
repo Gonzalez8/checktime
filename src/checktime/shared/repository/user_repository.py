@@ -55,7 +55,7 @@ class UserRepository(BaseRepository[User]):
         ).all()
         
     def set_checkjc_credentials(self, user_id: int, username: str, password: str, 
-                              enabled: bool = True) -> User:
+                              enabled: bool = True, subdomain: str = None) -> User:
         """
         Set the CheckJC credentials for a user.
         
@@ -64,6 +64,7 @@ class UserRepository(BaseRepository[User]):
             username (str): The CheckJC username
             password (str): The CheckJC password
             enabled (bool, optional): Whether auto check-in is enabled. Defaults to True.
+            subdomain (str, optional): The CheckJC subdomain. Required.
             
         Returns:
             User: The updated user
@@ -75,6 +76,8 @@ class UserRepository(BaseRepository[User]):
         user.checkjc_username = username
         user.set_checkjc_password(password)
         user.auto_checkin_enabled = enabled
+        if subdomain is not None:
+            user.checkjc_subdomain = subdomain
         
         return super().update(user)
         
