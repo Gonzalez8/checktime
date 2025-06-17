@@ -27,6 +27,7 @@ class RegistrationForm(FlaskForm):
     # CheckJC credentials (optional during registration)
     checkjc_username = StringField('CheckJC Username', validators=[Optional()])
     checkjc_password = PasswordField('CheckJC Password', validators=[Optional()])
+    checkjc_subdomain = StringField('CheckJC Subdomain', validators=[DataRequired()])
     auto_checkin_enabled = BooleanField('Enable Auto Check-in/out', default=True)
     # Telegram settings (optional during registration)
     telegram_chat_id = StringField('Telegram Chat ID', validators=[Optional()])
@@ -79,6 +80,7 @@ class ProfileForm(FlaskForm):
 class CheckJCCredentialsForm(FlaskForm):
     checkjc_username = StringField('CheckJC Username', validators=[Optional()])
     checkjc_password = PasswordField('CheckJC Password', validators=[Optional()])
+    checkjc_subdomain = StringField('CheckJC Subdomain', validators=[DataRequired()])
     auto_checkin_enabled = BooleanField('Enable Auto Check-in/out', default=True)
     submit = SubmitField('Save CheckJC Credentials')
 
@@ -129,14 +131,19 @@ def register():
         )
         
         # Set CheckJC credentials if provided
-        if form.checkjc_username.data and form.checkjc_password.data:
+        if form.checkjc_username.data and form.checkjc_password.data and form.checkjc_subdomain.data:
             user_manager.set_checkjc_credentials(
                 user_id=user.id,
                 username=form.checkjc_username.data,
                 password=form.checkjc_password.data,
-                enabled=form.auto_checkin_enabled.data
+                enabled=form.auto_checkin_enabled.data,
+                subdomain=form.checkjc_subdomain.data
             )
-            
+        else:
+            # Guardar el subdominio aunque no haya usuario/contraseña
+            user.checkjc_subdomain = form.checkjc_subdomain.data
+            user_manager.repository.update(user)
+        
         # Set Telegram settings if provided
         if form.telegram_chat_id.data:
             user_manager.set_telegram_settings(
@@ -144,7 +151,7 @@ def register():
                 chat_id=form.telegram_chat_id.data,
                 enabled=form.telegram_notifications_enabled.data
             )
-            
+        
         flash(get_translation('account_created', get_language()), 'success')
         return redirect(url_for('auth.login'))
     
@@ -187,7 +194,8 @@ def profile():
             user_id=current_user.id,
             username=checkjc_form.checkjc_username.data,
             password=checkjc_form.checkjc_password.data if checkjc_form.checkjc_password.data else current_user.checkjc_password,
-            enabled=checkjc_form.auto_checkin_enabled.data
+            enabled=checkjc_form.auto_checkin_enabled.data,
+            subdomain=checkjc_form.checkjc_subdomain.data
         )
         flash(get_translation('checkjc_credentials_updated', get_language()), 'success')
         return redirect(url_for('auth.profile') + '#checkjc-config')
@@ -206,6 +214,7 @@ def profile():
     if request.method == 'GET':
         checkjc_form.checkjc_username.data = current_user.checkjc_username
         checkjc_form.auto_checkin_enabled.data = current_user.auto_checkin_enabled
+        checkjc_form.checkjc_subdomain.data = current_user.checkjc_subdomain
         
         # Pre-fill Telegram form with current values
         telegram_form.telegram_chat_id.data = current_user.telegram_chat_id

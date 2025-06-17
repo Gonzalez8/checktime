@@ -18,6 +18,7 @@ class User(UserMixin, db.Model, TimestampMixin):
     # CheckJC credentials
     checkjc_username = db.Column(db.String(120), nullable=True)
     checkjc_password_encrypted = db.Column("checkjc_password", db.String(512), nullable=True)
+    checkjc_subdomain = db.Column(db.String(64), nullable=False, default="")
     auto_checkin_enabled = db.Column(db.Boolean, default=True)
     
     # Telegram settings

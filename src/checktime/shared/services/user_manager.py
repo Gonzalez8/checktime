@@ -205,7 +205,7 @@ class UserManager:
             logger.error(error_msg)
             return None
     
-    def set_checkjc_credentials(self, user_id: int, username: str, password: str, enabled: bool = True) -> Optional[User]:
+    def set_checkjc_credentials(self, user_id: int, username: str, password: str, enabled: bool = True, subdomain: str = None) -> Optional[User]:
         """
         Set the CheckJC credentials for a user.
         
@@ -214,12 +214,13 @@ class UserManager:
             username (str): The CheckJC username
             password (str): The CheckJC password
             enabled (bool, optional): Whether auto check-in is enabled. Defaults to True.
+            subdomain (str, optional): The CheckJC subdomain.
             
         Returns:
             User or None: The updated user or None on error
         """
         try:
-            user = self.repository.set_checkjc_credentials(user_id, username, password, enabled)
+            user = self.repository.set_checkjc_credentials(user_id, username, password, enabled, subdomain)
             if user:
                 logger.info(f"Updated CheckJC credentials for user {user.username}")
             return user
