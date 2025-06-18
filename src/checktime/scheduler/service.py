@@ -118,7 +118,7 @@ def perform_check_for_user(user, check_type):
     logger.info(f"Starting {check_type} check process for user {user.username}...")
     
     try:
-        with CheckJCClient(username=user.checkjc_username, password=user.checkjc_password) as client:
+        with CheckJCClient(username=user.checkjc_username, password=user.checkjc_password, subdomain=user.checkjc_subdomain) as client:
             client.login()
             if check_type == "in":
                 client.check_in()
