@@ -63,6 +63,13 @@
                         <div class="text-danger">{{ error }}</div>
                         {% endfor %}
                     </div>
+                    <div class="mb-3">
+                        <label for="checkjc_subdomain" class="form-label">{{ _('checkjc_subdomain') }} *</label>
+                        {{ form.checkjc_subdomain(class="form-control", id="checkjc_subdomain", placeholder=_('enter_checkjc_subdomain')) }}
+                        {% for error in form.checkjc_subdomain.errors %}
+                        <div class="text-danger">{{ error }}</div>
+                        {% endfor %}
+                    </div>
                     <div class="mb-3 form-check">
                         {{ form.auto_checkin_enabled(class="form-check-input", id="auto_checkin_enabled") }}
                         <label class="form-check-label" for="auto_checkin_enabled">{{ _('enable_auto_checkin') }}</label>

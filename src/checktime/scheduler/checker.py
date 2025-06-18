@@ -19,17 +19,17 @@ logger = logging.getLogger(__name__)
 class CheckJCClient:
     """Cliente para interactuar con CheckJC."""
     
-    def __init__(self, username, password):
-        if not username or not password:
-            raise ValueError("CheckJC username and password must be provided.")
-            
+    def __init__(self, username, password, subdomain):
+        if not username or not password or not subdomain:
+            raise ValueError("CheckJC username, password, and subdomain must be provided.")
 
         self.username = username
         self.password = password
+        self.subdomain = subdomain
         self.driver = None
         self.wait = None
         self.timeout = get_selenium_timeout()
-        self.login_url = "https://trainingbnetwork.checkjc.com/login"
+        self.login_url = f"https://{self.subdomain}.checkjc.com/login"
     
     def __enter__(self):
         if SIMULATION_MODE:
