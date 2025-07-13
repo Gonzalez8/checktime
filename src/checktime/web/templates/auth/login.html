@@ -4,36 +4,49 @@
 
 {% block content %}
 <div class="row justify-content-center">
-    <div class="col-md-6">
-        <div class="card shadow">
-            <div class="card-header bg-primary text-white">
-                <h4 class="mb-0"><i class="bi bi-person-badge"></i> {{ _('login') }}</h4>
+    <div class="col-md-6 col-lg-5">
+        <div class="card-modern hover-lift animate-scale-in">
+            <div class="card-modern-header text-center">
+                <i class="bi bi-person-badge" style="font-size: 2.5rem; color: var(--primary-600); margin-bottom: var(--space-3);"></i>
+                <h4 class="card-modern-title">{{ _('login') }}</h4>
+                <p class="card-modern-subtitle">{{ _('welcome_back', 'Welcome back! Please sign in to your account.') }}</p>
             </div>
-            <div class="card-body">
+            <div class="card-modern-body">
                 <form method="post" action="{{ url_for('auth.login') }}">
                     {{ form.hidden_tag() }}
-                    <div class="mb-3">
-                        <label for="username" class="form-label">{{ _('username') }}</label>
-                        {{ form.username(class="form-control", id="username", placeholder=_('enter_username')) }}
+                    <div class="form-group-modern">
+                        <label for="username" class="form-label-modern">{{ _('username') }}</label>
+                        {{ form.username(class="form-control-modern focus-ring", id="username", placeholder=_('enter_username')) }}
                         {% for error in form.username.errors %}
-                        <div class="text-danger">{{ error }}</div>
+                        <div class="text-danger mt-1" style="font-size: var(--text-sm);">{{ error }}</div>
                         {% endfor %}
                     </div>
-                    <div class="mb-3">
-                        <label for="password" class="form-label">{{ _('password') }}</label>
-                        {{ form.password(class="form-control", id="password", placeholder=_('enter_password')) }}
+                    <div class="form-group-modern">
+                        <label for="password" class="form-label-modern">{{ _('password') }}</label>
+                        {{ form.password(class="form-control-modern focus-ring", id="password", placeholder=_('enter_password')) }}
                         {% for error in form.password.errors %}
-                        <div class="text-danger">{{ error }}</div>
+                        <div class="text-danger mt-1" style="font-size: var(--text-sm);">{{ error }}</div>
                         {% endfor %}
                     </div>
-                    <div class="mb-3 form-check">
-                        {{ form.remember_me(class="form-check-input", id="remember_me") }}
-                        <label class="form-check-label" for="remember_me">{{ _('remember_me') }}</label>
+                    <div class="form-group-modern">
+                        <div class="form-check">
+                            {{ form.remember_me(class="form-check-input", id="remember_me") }}
+                            <label class="form-check-label" for="remember_me">{{ _('remember_me') }}</label>
+                        </div>
                     </div>
-                    <div class="d-grid gap-2">
-                        <button type="submit" class="btn btn-primary">{{ _('sign_in') }}</button>
+                    <div class="d-grid">
+                        <button type="submit" class="btn-modern btn-primary btn-lg focus-ring">
+                            <i class="bi bi-box-arrow-in-right"></i>
+                            {{ _('sign_in') }}
+                        </button>
                     </div>
                 </form>
+            </div>
+            <div class="card-modern-footer">
+                <div class="text-center w-100">
+                    <span class="text-muted">{{ _('dont_have_account', "Don't have an account?") }}</span>
+                    <a href="{{ url_for('auth.register') }}" class="text-decoration-none">{{ _('register_here', 'Register here') }}</a>
+                </div>
             </div>
         </div>
     </div>

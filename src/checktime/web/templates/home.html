@@ -5,49 +5,87 @@
 {% block styles %}
 <style>
     .hero-section {
-        background-color: #f8f9fa;
-        padding: 80px 0;
-        margin-bottom: 30px;
-        border-radius: 10px;
+        background: var(--gradient-hero);
+        padding: var(--space-32) 0;
+        margin-bottom: var(--space-16);
+        border-radius: var(--radius-2xl);
+        color: var(--white);
+        position: relative;
+        overflow: hidden;
     }
     
-    .feature-box {
-        padding: 30px;
-        border-radius: 8px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        height: 100%;
-        transition: transform 0.3s;
+    .hero-section::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.1);
+        z-index: 1;
     }
     
-    .feature-box:hover {
-        transform: translateY(-5px);
+    .hero-content {
+        position: relative;
+        z-index: 2;
+    }
+    
+    .hero-title {
+        font-size: var(--text-5xl);
+        font-weight: var(--font-bold);
+        margin-bottom: var(--space-6);
+        color: var(--white);
+    }
+    
+    .hero-subtitle {
+        font-size: var(--text-xl);
+        margin-bottom: var(--space-8);
+        color: rgba(255, 255, 255, 0.9);
+    }
+    
+    .feature-card {
+        transition: all var(--transition-base);
+    }
+    
+    .feature-card:hover {
+        transform: translateY(-4px);
     }
     
     .feature-icon {
-        font-size: 2.5rem;
-        margin-bottom: 15px;
-        color: #0d6efd;
+        font-size: 3rem;
+        margin-bottom: var(--space-4);
+        color: var(--primary-600);
+        transition: color var(--transition-fast);
     }
     
-    .cta-button {
-        padding: 10px 30px;
-        font-size: 1.2rem;
-        margin: 5px;
+    [data-theme="dark"] .feature-icon {
+        color: var(--primary-400);
+    }
+    
+    .cta-section {
+        background: var(--gray-50);
+        padding: var(--space-20) 0;
+        border-radius: var(--radius-2xl);
+        margin: var(--space-16) 0;
+    }
+    
+    [data-theme="dark"] .cta-section {
+        background: var(--gray-800);
     }
 </style>
 {% endblock %}
 
 {% block content %}
 <!-- Hero Section -->
-<div class="hero-section text-center">
-    <div class="container">
-        <h1 class="display-4">{{ _('app_name') }}</h1>
-        <p class="lead">{{ _('app_description', 'Manage your work schedules and automate check-ins with ease') }}</p>
-        <div class="mt-5">
-            <a href="{{ url_for('auth.login') }}" class="btn btn-primary cta-button">
+<div class="hero-section text-center animate-fade-in">
+    <div class="container hero-content">
+        <h1 class="hero-title">{{ _('app_name') }}</h1>
+        <p class="hero-subtitle">{{ _('app_description', 'Manage your work schedules and automate check-ins with ease') }}</p>
+        <div class="d-flex justify-content-center gap-3 flex-wrap">
+            <a href="{{ url_for('auth.login') }}" class="btn-modern btn-secondary btn-lg hover-lift">
                 <i class="bi bi-box-arrow-in-right"></i> {{ _('login') }}
             </a>
-            <a href="{{ url_for('auth.register') }}" class="btn btn-outline-primary cta-button">
+            <a href="{{ url_for('auth.register') }}" class="btn-modern btn-primary btn-lg hover-lift">
                 <i class="bi bi-person-plus"></i> {{ _('register') }}
             </a>
         </div>
@@ -57,43 +95,51 @@
 <!-- Features Section -->
 <div class="container">
     <h2 class="text-center mb-5">{{ _('features', 'Features') }}</h2>
-    <div class="row">
+    <div class="row feature-grid">
         <div class="col-md-4 mb-4">
-            <div class="feature-box bg-white">
-                <div class="text-center">
-                    <i class="bi bi-calendar-check feature-icon"></i>
-                    <h3>{{ _('schedule_management', 'Schedule Management') }}</h3>
+            <div class="card-modern feature-card hover-lift animate-slide-up text-center d-flex flex-column h-100">
+                <i class="bi bi-calendar-check feature-icon"></i>
+                <div class="card-modern-header">
+                    <h3 class="card-modern-title">{{ _('schedule_management', 'Schedule Management') }}</h3>
                 </div>
-                <p>{{ _('schedule_description', 'Create and manage your work schedules with our intuitive interface.') }}</p>
+                <div class="card-modern-body flex-grow-1">
+                    <p>{{ _('schedule_description', 'Create and manage your work schedules with our intuitive interface.') }}</p>
+                </div>
             </div>
         </div>
         <div class="col-md-4 mb-4">
-            <div class="feature-box bg-white">
-                <div class="text-center">
-                    <i class="bi bi-clock-history feature-icon"></i>
-                    <h3>{{ _('automated_checkins', 'Automated Check-ins') }}</h3>
+            <div class="card-modern feature-card hover-lift animate-slide-up text-center d-flex flex-column h-100">
+                <i class="bi bi-clock-history feature-icon"></i>
+                <div class="card-modern-header">
+                    <h3 class="card-modern-title">{{ _('automated_checkins', 'Automated Check-ins') }}</h3>
                 </div>
-                <p>{{ _('automation_description', 'Automate your check-ins and check-outs based on your schedule.') }}</p>
+                <div class="card-modern-body flex-grow-1">
+                    <p>{{ _('automation_description', 'Automate your check-ins and check-outs based on your schedule.') }}</p>
+                </div>
             </div>
         </div>
         <div class="col-md-4 mb-4">
-            <div class="feature-box bg-white">
-                <div class="text-center">
-                    <i class="bi bi-calendar-event feature-icon"></i>
-                    <h3>{{ _('holiday_tracking', 'Holiday Tracking') }}</h3>
+            <div class="card-modern feature-card hover-lift animate-slide-up text-center d-flex flex-column h-100">
+                <i class="bi bi-calendar-event feature-icon"></i>
+                <div class="card-modern-header">
+                    <h3 class="card-modern-title">{{ _('holiday_tracking', 'Holiday Tracking') }}</h3>
                 </div>
-                <p>{{ _('holiday_description', 'Keep track of holidays and special dates to adjust your work schedule.') }}</p>
+                <div class="card-modern-body flex-grow-1">
+                    <p>{{ _('holiday_description', 'Keep track of holidays and special dates to adjust your work schedule.') }}</p>
+                </div>
             </div>
         </div>
     </div>
 </div>
 
 <!-- Call to Action -->
-<div class="container text-center my-5">
-    <h2>{{ _('get_started_today', 'Get Started Today!') }}</h2>
-    <p class="lead mb-4">{{ _('cta_description', 'Join CheckTime and simplify your work scheduling and time tracking.') }}</p>
-    <a href="{{ url_for('auth.register') }}" class="btn btn-primary cta-button">
-        <i class="bi bi-person-plus"></i> {{ _('register_now', 'Register Now') }}
-    </a>
+<div class="cta-section">
+    <div class="container text-center">
+        <h2 class="mb-4">{{ _('get_started_today', 'Get Started Today!') }}</h2>
+        <p class="lead mb-5">{{ _('cta_description', 'Join CheckTime and simplify your work scheduling and time tracking.') }}</p>
+        <a href="{{ url_for('auth.register') }}" class="btn-modern btn-primary btn-lg hover-lift">
+            <i class="bi bi-person-plus"></i> {{ _('register_now', 'Register Now') }}
+        </a>
+    </div>
 </div>
 {% endblock %} 
