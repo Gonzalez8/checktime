@@ -1,249 +1,137 @@
 # CheckTime
 
-Automated check-in and check-out system for CheckJC with web management and Telegram integration.
+CheckTime is a comprehensive, self-hosted application designed to automate browser-based check-ins and check-outs. It features a full-fledged web interface for management, a Telegram bot for notifications and quick actions, and a robust scheduling system.
 
 ---
 
 ## Table of Contents
 
 - [Features](#features)
-- [Screenshots](#screenshots)
-- [Architecture Overview](#architecture-overview)
-- [Service Details](#service-details)
-- [Multi-User Support](#multi-user-support)
-- [Requirements](#requirements)
-- [Installation](#installation)
-  - [1. Configuration](#1-configuration)
-  - [2. Installation with Docker (Recommended)](#2-installation-with-docker-recommended)
-  - [3. Installation without Docker (Development)](#3-installation-without-docker-development)
-- [Using the Web Interface](#using-the-web-interface)
-- [Interactive Calendar](#interactive-calendar)
+- [Architecture](#architecture)
+- [Technology Stack](#technology-stack)
+- [Getting Started](#getting-started)
+  - [Prerequisites](#prerequisites)
+  - [Configuration](#configuration)
+  - [Installation](#installation)
+- [Usage](#usage)
+  - [Web Interface](#web-interface)
+  - [Telegram Bot](#telegram-bot)
 - [License](#license)
-- [Additional Notes](#additional-notes)
 
 ---
 
 ## Features
 
-- Automatic check-in/check-out based on user schedules
-- Holiday detection (national, regional, local)
-- Multi-user support with personal CheckJC credentials
-- Telegram bot integration for notifications and remote management
-- Modern web dashboard with interactive calendar and dark mode support
-- Real-time calendar updates without page reloads
-- Visual distinction between working days, holidays, and overrides
-- Support for custom schedules and holiday management
-- Responsive design optimized for mobile devices
+- **Automated Clocking**: Automatically performs check-ins and check-outs based on user-defined schedules.
+- **Multi-User Support**: Each user has their own credentials, schedules, and settings.
+- **Flexible Scheduling**:
+    - Create multiple schedule periods (e.g., "Summer Hours," "Standard Hours").
+    - Define specific check-in/out times for each day of the week.
+    - Override schedules for specific dates without altering the main schedule.
+- **Holiday Management**:
+    - Add holidays individually or for a date range.
+    - Import holidays from `.ics` (iCalendar) files.
+    - Holidays are respected by the scheduler, preventing actions on non-working days.
+- **Interactive Web Dashboard**:
+    - A visual calendar that displays work days, holidays, and overrides.
+    - Manage users, schedules, and system settings.
+    - AJAX-powered for a smooth, single-page application feel.
+- **Telegram Integration**:
+    - Receive real-time notifications for check-ins, check-outs, and errors.
+    - Add or remove holidays via simple bot commands.
+    - Get your `chat_id` for easy setup.
+- **Containerized Deployment**: Packaged with Docker and Docker Compose for easy and consistent deployment.
 
 ---
 
-## Screenshots
+## Architecture
 
-### Dashboard Views
-![Calendar View](docs/screenshots/dashboard-calendar.png)  
-![Statistics View](docs/screenshots/dashboard-stats.png)
+CheckTime is a monolithic application composed of three main processes running within a single Docker container, orchestrated by `supervisord`. This design ensures that all components share the same environment and can communicate efficiently.
 
-### Holiday and Schedule Management
-![Holiday Import](docs/screenshots/holiday-import.png)  
-![Schedule Editor](docs/screenshots/schedule-editor.png)
+- **Database (`db` service)**: A **PostgreSQL** container that provides persistent storage for all application data.
+- **Application (`app` service)**: A single Docker container running three core processes:
+    1.  **Web Process**: A **Flask** application served by **Gunicorn**. It provides the main user interface for managing the system.
+    2.  **Scheduler Process**: A background service that uses the `schedule` library to trigger check-ins/outs. It leverages **Selenium** to interact with the target time-tracking website.
+    3.  **Bot Process**: A **python-telegram-bot** listener that handles incoming commands and sends notifications.
 
----
-
-## Architecture Overview
-
-CheckTime consists of four main services:
-- **Web**: User dashboard and system management.
-- **Scheduler**: Automated clock-in/clock-out execution.
-- **Bot**: Telegram integration for notifications and commands.
-- **Database**: PostgreSQL for persistent storage.
-
-Each service runs independently but shares a single database for consistency.
+All processes within the `app` service share a common business logic layer (`services`) and data access layer (`repositories`), ensuring code is reusable and the architecture is clean.
 
 ---
 
-## Service Details
+## Technology Stack
 
-- **Web Service**: Admin dashboard, user management, holiday import, schedule setup.
-- **Scheduler Service**: Executes user check-ins/check-outs according to personalized calendars.
-- **Telegram Bot**: Sends notifications and allows basic remote commands via Telegram.
-- **Database**: Stores users, credentials, holidays, schedules, and preferences.
-
----
-
-## Multi-User Support
-
-Each user can:
-- Register their own CheckJC credentials.
-- Manage personal schedules and holidays.
-- Set up Telegram notifications independently.
-- Control automatic check-in/out settings.
-
-All operations are fully isolated per user.
+- **Backend**: Python, Flask, SQLAlchemy
+- **Frontend**: Jinja2, JavaScript, AJAX, Bootstrap
+- **Database**: PostgreSQL
+- **Automation**: Selenium
+- **Deployment**: Docker, Docker Compose, Gunicorn, Supervisord
+- **Notifications**: Telegram
 
 ---
 
-## Requirements
+## Getting Started
 
-- **Python 3.8+**
-- **Google Chrome** and **Chromedriver** (compatible version)
-- **Docker** and **Docker Compose** (for production deployment)
+### Prerequisites
 
----
+- **Docker**: For running the application in containers.
+- **Docker Compose**: To orchestrate the multi-service application.
 
-## Installation
+### Configuration
 
-Before starting, **make sure you configure your environment variables**.
+1.  **Create the Environment File**: Copy the example file to create your own configuration.
+    ```bash
+    cp .env.example .env
+    ```
 
----
+2.  **Edit the `.env` File**: Open the `.env` file and fill in the required values. This is a **mandatory** step.
+    - **Database Settings**: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`.
+    - **Application Settings**: `FLASK_SECRET_KEY` (generate a new secret key), `ADMIN_PASSWORD`.
+    - **Telegram Bot**: `TELEGRAM_BOT_TOKEN` (get this from BotFather).
+    - **Ports**: `WEB_PORT` (the external port for the web UI), `POSTGRES_DB_PORT`.
 
-### 1. Configuration
+### Installation
 
-1. **Create your `.env` file**:
-   ```bash
-   cp .env.example .env
-   ```
+With Docker and Docker Compose installed, running the application is straightforward:
 
-2. **Edit the `.env` file** with your preferred settings:
-   - **Database Settings**: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_DB_PORT`.
-   - **Web App Settings**: `FLASK_SECRET_KEY`, `ADMIN_PASSWORD`, `PORT`, `WEB_PORT`.
-   - **Telegram Bot Settings**: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `TELEGRAM_BOT_NAME` (optional).
-   - **Timezone and Logging**: `TZ`, `LOG_LEVEL`.
+1.  **Build and Start the Services**:
+    ```bash
+    docker-compose up --build -d
+    ```
+    This command builds the `app` image and starts the application and database containers in the background.
 
-> **Important:**  
-> The `.env` file is **mandatory**.  
-> Without it, the application and Docker Compose will not start correctly.
+2.  **Access the Web Interface**:
+    Open your browser and navigate to `http://localhost:<WEB_PORT>` (replace `<WEB_PORT>` with the port you configured in `.env`).
 
----
-
-### 2. Installation with Docker (Recommended)
-
-1. **Build and start all services**:
-   ```bash
-   docker compose up -d
-   ```
-
-2. **Access the web interface**:
-   Open your browser at:
-   ```
-   http://localhost:5001
-   ```
-   (or the port you set in `WEB_PORT`).
-
-3. **Available Docker services**:
-   You can start specific services manually if needed:
-   ```bash
-   docker compose up -d web        # Web dashboard
-   docker compose up -d scheduler  # Scheduler service
-   docker compose up -d bot        # Telegram bot
-   docker compose up -d db         # Database only
-   ```
-
-4. **(First time)**  
-   - Login with username `admin` and the password you set in `ADMIN_PASSWORD`.
-   - Configure your own user account, schedules, holidays, and Telegram notifications.
+3.  **Monitor Logs**:
+    To view the logs from all running services:
+    ```bash
+    docker-compose logs -f
+    ```
 
 ---
 
-### 3. Installation without Docker (Development Mode)
+## Usage
 
-1. **Create a Python virtual environment**:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate   # On Windows: venv\Scripts\activate
-   ```
+### Web Interface
 
-2. **Install dependencies**:
-   ```bash
-   pip install -e .
-   ```
+1.  **Login**: On first launch, log in with the username `admin` and the `ADMIN_PASSWORD` you set in the `.env` file.
+2.  **Register Your User**: It is recommended to register a new, non-admin user for daily operations.
+3.  **Configure Your Profile**:
+    - In the profile section, enter your credentials for the time-tracking website (`CheckJC`).
+    - Set your Telegram `chat_id` to enable notifications.
+4.  **Set Up Schedules**: Navigate to the "Schedules" section to define your work periods and daily check-in/out times.
+5.  **Add Holidays**: Go to the "Holidays" section to add your vacation days or import a calendar.
 
-3. **Run each service manually**:
+### Telegram Bot
 
-   - Web interface:
-     ```bash
-     python -m src.checktime.web.server
-     ```
-   - Scheduler service:
-     ```bash
-     python -m src.checktime.scheduler.service
-     ```
-   - Telegram bot:
-     ```bash
-     python -m src.checktime.bot.listener
-     ```
-
-> ⚠️ Make sure your PostgreSQL database is already running if you work without Docker.
-
----
-
-## Using the Web Interface
-
-1. Access the web at `http://localhost:5001`.
-2. Login as **admin** or register a new user.
-3. Through the dashboard you can:
-   - Manage user accounts
-   - Import holidays from `.ics` files
-   - Set check-in/check-out schedules
-   - Configure Telegram notifications
-   - Enable or disable automatic operations per user
-
----
-
-## Interactive Calendar
-
-The modernized dashboard features a powerful interactive calendar system with numerous enhancements:
-
-### Visual Features
-- **Color-Coded Events**: Working days, holidays, and schedule overrides are clearly distinguished with different colors
-- **Hover Effects**: Visual feedback when hovering over calendar cells
-- **Smooth Transitions**: Animations when switching between months
-- **Loading Indicators**: Skeleton loading placeholders during data fetching
-- **Tooltip Information**: Detailed information appears when hovering over events
-
-### Interactive Functionality
-- **One-Click Navigation**: Easy switching between months
-- **Direct Event Creation**: Click on any day to add holidays or schedule overrides
-- **Modal Interfaces**: Streamlined dialogs for creating and editing events
-- **Toast Notifications**: Non-intrusive feedback when actions are completed
-
-### Calendar Actions
-- **Add Holidays**: Click any day to add a holiday with description
-- **Create Overrides**: Modify scheduled check-in/check-out times for specific days
-- **Quick View**: See your full month schedule at a glance
-- **Month Navigation**: Move between months with previous/next buttons
-- **Today Button**: Quick return to current month
-
-### Real-Time Updates
-- **AJAX Loading**: Calendar updates without full page reloads
-- **Partial Rendering**: Only the necessary content changes when updating
-- **Consistent State**: Calendar maintains its state during interactions
-- **Automatic Refresh**: Holiday counts and statistics update automatically
-
-### Responsive Design
-- **Mobile Optimization**: Calendar adapts to different screen sizes
-- **Touch-Friendly**: Large tap targets for mobile users
-- **Compact View**: Simplified display on smaller screens
-- **Consistent Experience**: Core functionality works across all devices
-
-The calendar system is central to CheckTime, providing an intuitive interface for managing your automated check-in/check-out schedule with visual distinction between regular schedule days, holidays, and special overrides.
+-   **/start**: Get a welcome message with available commands.
+-   **/getchatid**: Returns your unique Telegram Chat ID, which you need to add to your profile in the web UI to receive notifications.
+-   **/addfestivo YYYY-MM-DD [Description]**: Add a new holiday.
+-   **/delfestivo YYYY-MM-DD**: Remove an existing holiday.
+-   **/listfestivos**: List all upcoming holidays.
 
 ---
 
 ## License
 
-This project is licensed under the **MIT License**.  
-Feel free to use, modify, and distribute it under the terms of the license.
-
----
-
-## Additional Notes
-
-- If you plan to use **Telegram**, make sure the bot token is correctly set in `.env`.
-- For **Scheduler** to work, ensure your installed **Chromedriver** version matches your **Google Chrome** version.
-- You can monitor logs with:
-  ```bash
-  docker compose logs -f
-  ```
-- Important logs are also stored in `logs/error.log`.
-
----
+This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for details.
