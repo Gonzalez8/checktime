@@ -132,6 +132,22 @@ With Docker and Docker Compose installed, running the application is straightfor
 
 ---
 
+## Screenshots
+
+**Home**
+![Home](docs/screenshots/new-home.png)
+
+**Dashboard**
+![Dashboard](docs/screenshots/new-dashboard.png)
+
+**Holidays**
+![Holidays](docs/screenshots/new-holidays.png)
+
+**Schedules**
+![Schedules](docs/screenshots/new-schedules.png)
+
+---
+
 ## License
 
 This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for details.
