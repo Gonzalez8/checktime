@@ -32,7 +32,7 @@ push-release:
 publish-latest: build-latest push-latest
 
 # 🔵 Build + Push de release (etiquetado por tag) de un tirón
-publish-release: build-release push-release
+publish-release: build-release push-release tag-latest
 
 # 🔵 NUEVO: Actualizar 'latest' apuntando a la última versión
 tag-latest:
