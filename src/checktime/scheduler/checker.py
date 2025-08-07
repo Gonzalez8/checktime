@@ -113,7 +113,7 @@ class CheckJCClient:
             raise
 
     def perform_check(self, check_type: str):
-        """Check in or check out, robust version."""
+        """Performs a check-in or check-out by clicking the check button and waiting for the page to reload."""
         if SIMULATION_MODE:
             time.sleep(1)
             now = datetime.now().strftime("%H:%M:%S")
@@ -121,27 +121,35 @@ class CheckJCClient:
             return True
 
         try:
-            logger.info(f"Searching for Check {check_type} button")
-            btn_fichar = self.wait.until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, "#btn-check, button.btn-check, button[id*='check'], button[class*='check']"))
-            )
-            self.driver.execute_script("arguments[0].click();", btn_fichar)
+            logger.info(f"Attempting to perform Check {check_type} for {self.username}")
 
-            # Espera a que aparezca el mensaje de éxito
-            try:
-                success = WebDriverWait(self.driver, 15).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, ".alert-success, .bubble.alert-success"))
-                )
-                if "Resultado del fichaje" in self.driver.page_source:
-                    logger.info(f"Check {check_type} completed for {self.username} successfully")
-                    return True
-                else:
-                    logger.error(f"Check {check_type} for {self.username} - Success message not found. HTML: {self.driver.page_source[:1000]}")
-                    raise Exception("Success message not found after check")
-            except TimeoutException:
-                logger.error(f"Check {check_type} for {self.username} - Timeout waiting for success message. HTML: {self.driver.page_source[:1000]}")
-                raise Exception("Timeout waiting for success message after check")
+            # 1. Find the check button
+            check_button_selector = (By.CSS_SELECTOR, "#btn-check, button.btn-check, button[id*='check'], button[class*='check']")
+            check_button = self.wait.until(EC.element_to_be_clickable(check_button_selector))
 
+            # 2. Click the button
+            self.driver.execute_script("arguments[0].click();", check_button)
+            logger.info(f"Clicked Check {check_type} button")
+
+            # 3. Wait for the page to reload by waiting for the old button to go stale.
+            # This confirms the navigation to the temporary result page has started.
+            logger.info("Waiting for page to start reloading (button to go stale)...")
+            WebDriverWait(self.driver, 15).until(EC.staleness_of(check_button))
+            logger.info("Page has started reloading.")
+
+            # 4. Wait for the new page to load (after the 5s redirect) and the button to be available again.
+            logger.info("Waiting for new page to load and check button to be ready...")
+            self.wait.until(EC.element_to_be_clickable(check_button_selector))
+            logger.info(f"Check {check_type} for {self.username} completed successfully.")
+
+            return True
+
+        except TimeoutException:
+            logger.error(f"Timeout occurred during Check {check_type} for {self.username}. The page did not reload as expected.")
+            # Re-read the page source to provide more context in the error log
+            page_source = self.driver.page_source
+            logger.error(f"Current page source on timeout:\n{page_source[:2000]}")
+            raise Exception(f"Timeout during Check {check_type}")
         except Exception as e:
             error_msg = f"❌ Error during Check {check_type} for {self.username}: {e}"
             logger.error(error_msg)
