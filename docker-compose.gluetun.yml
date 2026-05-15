@@ -1,0 +1,88 @@
+version: "3.8"
+
+# Variante del docker-compose.yml que enruta TODO el tráfico saliente del
+# contenedor `app` (web + bot + scheduler) a través de Gluetun con NordVPN.
+# CheckJC ve la IP de salida de NordVPN, no la IP residencial del host.
+#
+# Requisitos en stack.env (Portainer):
+#   OPENVPN_USER=...           (credencial "manual setup" de NordVPN)
+#   OPENVPN_PASSWORD=...
+#   (resto de vars de checktime ya existentes)
+
+services:
+  gluetun:
+    image: qmcgaw/gluetun:latest
+    container_name: checktime-gluetun
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      - VPN_SERVICE_PROVIDER=nordvpn
+      - VPN_TYPE=openvpn
+      - OPENVPN_USER=${OPENVPN_USER}
+      - OPENVPN_PASSWORD=${OPENVPN_PASSWORD}
+      - SERVER_COUNTRIES=Spain
+    # Los puertos que la web del app debe exponer hay que abrirlos AQUÍ,
+    # no en `app`, porque `app` reutiliza la network stack de gluetun.
+    ports:
+      - "${WEB_PORT}:${PORT}"
+    # extra_hosts vive aquí (y no en `app`) porque `app` comparte la
+    # network stack de gluetun y hereda este /etc/hosts. Docker rechaza
+    # combinar network_mode con extra_hosts propios del servicio.
+    extra_hosts:
+      - "db:192.168.56.11"
+    restart: unless-stopped
+    networks:
+      checktime:
+        ipv4_address: 192.168.56.10
+
+  db:
+    image: postgres:15-alpine
+    container_name: checktime-db
+    env_file:
+      - stack.env
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - ${DB_STORAGE_PATH}:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      checktime:
+        ipv4_address: 192.168.56.11
+
+  app:
+    image: ghcr.io/gonzalez8/checktime:${CHECK_TIME_VERSION}
+    container_name: checktime-app
+    env_file:
+      - stack.env
+    environment:
+      - PYTHONPATH=/app
+    volumes:
+      - ./config:/app/config
+      - /var/log/checktime:/var/log/checktime
+    # Comparte la network stack de gluetun: TODO el tráfico saliente sale
+    # por NordVPN. No puede declarar `ports` ni `networks` aquí, los hereda.
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_started
+      db:
+        condition: service_healthy
+    # Nota: `db` lo resuelve vía /etc/hosts heredado de gluetun
+    # (donde está declarado el extra_hosts).
+    restart: unless-stopped
+
+networks:
+  checktime:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.56.0/24

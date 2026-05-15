@@ -5,7 +5,7 @@ services:
     image: postgres:15-alpine
     container_name: checktime-db
     env_file:
-      - .env
+      - stack.env
     environment:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
@@ -25,7 +25,7 @@ services:
     image: ghcr.io/gonzalez8/checktime:${CHECK_TIME_VERSION}
     container_name: checktime-app
     env_file:
-      - .env
+      - stack.env
     environment:
       - PYTHONPATH=/app
     volumes:
