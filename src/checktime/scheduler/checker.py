@@ -302,7 +302,9 @@ class CheckJCClient:
             try:
                 body_size = len(self._page.content() or "")
                 screenshot_path = f"/var/log/checktime/checkjc_failed_login_{self.username}.png"
-                self._page.screenshot(path=screenshot_path, full_page=True)
+                # Solo viewport (1280x800): suficiente para diagnosticar y
+                # mucho más ligero que full_page (~150 KB vs 1-2 MB).
+                self._page.screenshot(path=screenshot_path, full_page=False)
             except Exception:
                 body_size = -1
                 screenshot_path = "(screenshot failed)"
