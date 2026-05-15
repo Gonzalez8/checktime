@@ -120,7 +120,7 @@ class CheckJCClient:
             return True
 
         logger.info(f"Navigating to {self.login_url}")
-        self._page.goto(self.login_url, wait_until="domcontentloaded")
+        self._page.goto(self.login_url, wait_until="networkidle")
         # Hidratación de Stencil + render del template shadow DOM closed.
         self._page.wait_for_timeout(2000)
 
@@ -297,10 +297,23 @@ class CheckJCClient:
         pwd = self._first_visible(pass_nodes)
         btn = self._first_visible(btn_nodes)
         if not (user and pwd and btn):
+            # Capturamos info útil para distinguir "CheckJC cambió HTML" de
+            # "CheckJC nos sirve HTML lite porque tiene la IP marcada".
+            try:
+                body_size = len(self._page.content() or "")
+                screenshot_path = f"/var/log/checktime/checkjc_failed_login_{self.username}.png"
+                self._page.screenshot(path=screenshot_path, full_page=True)
+            except Exception:
+                body_size = -1
+                screenshot_path = "(screenshot failed)"
             raise CheckJCFormError(
-                f"Login form elements not found in DOM "
-                f"(usernames={len(user_nodes)}, passwords={len(pass_nodes)}, "
-                f"buttons={len(btn_nodes)}, visible={(bool(user), bool(pwd), bool(btn))})"
+                f"Login form elements not found in DOM for {self.username}. "
+                f"Counts: usernames={len(user_nodes)}, passwords={len(pass_nodes)}, "
+                f"buttons={len(btn_nodes)}. Visible: "
+                f"user={bool(user)}, pwd={bool(pwd)}, btn={bool(btn)}. "
+                f"Page body size: {body_size} bytes (normal is ~70KB; if much smaller "
+                f"the server is serving a 'lite' variant because the egress IP is marked). "
+                f"Screenshot: {screenshot_path}"
             )
         return user, pwd, btn
 
