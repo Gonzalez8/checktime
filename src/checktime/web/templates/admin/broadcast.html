@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block title %}{{ _('broadcast') }} - {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h2><i class="bi bi-megaphone"></i> {{ _('broadcast') }}</h2>
+        <p class="text-muted">{{ _('broadcast_intro') }}</p>
+    </div>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        {% for category, message in messages %}
+            <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+{% endwith %}
+
+<div class="card shadow">
+    <div class="card-header bg-primary text-white">
+        <h5 class="mb-0">
+            <i class="bi bi-send"></i> {{ _('broadcast_compose') }}
+        </h5>
+    </div>
+    <div class="card-body">
+        {% if recipient_count == 0 %}
+            <div class="alert alert-warning mb-0">
+                <i class="bi bi-exclamation-triangle"></i>
+                {{ _('broadcast_no_recipients') }}
+            </div>
+        {% else %}
+            <p>
+                <i class="bi bi-people"></i>
+                <strong>{{ recipient_count }}</strong> {{ _('broadcast_recipients_count') }}:
+                <span class="text-muted">
+                    {{ recipients | map(attribute='username') | join(', ') }}
+                </span>
+            </p>
+
+            <form method="POST" action="{{ url_for('admin.broadcast') }}">
+                <div class="mb-3">
+                    <label for="message" class="form-label">
+                        {{ _('broadcast_message_label') }}
+                    </label>
+                    <textarea
+                        class="form-control"
+                        id="message"
+                        name="message"
+                        rows="8"
+                        maxlength="3500"
+                        required
+                        placeholder="{{ _('broadcast_message_placeholder') }}"
+                    ></textarea>
+                    <div class="form-text">
+                        {{ _('broadcast_markdown_hint') }}
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-end gap-2">
+                    <a href="{{ url_for('dashboard.index') }}" class="btn btn-outline-secondary">
+                        <i class="bi bi-x-circle"></i> {{ _('cancel') }}
+                    </a>
+                    <button
+                        type="submit"
+                        class="btn btn-primary"
+                        onclick="return confirm('{{ _('broadcast_confirm') }}');"
+                    >
+                        <i class="bi bi-send"></i> {{ _('broadcast_send') }}
+                    </button>
+                </div>
+            </form>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

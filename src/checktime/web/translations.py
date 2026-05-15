@@ -309,6 +309,18 @@ EN = {
     'month_october': 'October',
     'month_november': 'November',
     'month_december': 'December',
+
+    # Admin broadcast
+    'broadcast': 'Broadcast',
+    'broadcast_intro': 'Send a Telegram message to every user that has a Telegram chat configured.',
+    'broadcast_compose': 'Compose message',
+    'broadcast_recipients_count': 'recipients',
+    'broadcast_no_recipients': 'No users have a Telegram chat configured yet.',
+    'broadcast_message_label': 'Message',
+    'broadcast_message_placeholder': 'Write your announcement here. Markdown is supported.',
+    'broadcast_markdown_hint': 'You can use *bold*, _italic_ and `code`. The message will be prefixed with "📢 Aviso del administrador".',
+    'broadcast_send': 'Send broadcast',
+    'broadcast_confirm': 'Send this message to ALL Telegram users?',
 }
 
 # Spanish translations
@@ -616,6 +628,18 @@ ES = {
     'month_october': 'Octubre',
     'month_november': 'Noviembre',
     'month_december': 'Diciembre',
+
+    # Admin broadcast
+    'broadcast': 'Comunicación',
+    'broadcast_intro': 'Envía un mensaje de Telegram a todos los usuarios con chat configurado.',
+    'broadcast_compose': 'Redactar mensaje',
+    'broadcast_recipients_count': 'destinatarios',
+    'broadcast_no_recipients': 'Ningún usuario tiene un chat de Telegram configurado todavía.',
+    'broadcast_message_label': 'Mensaje',
+    'broadcast_message_placeholder': 'Escribe tu aviso aquí. Se admite Markdown.',
+    'broadcast_markdown_hint': 'Puedes usar *negrita*, _cursiva_ y `código`. El mensaje se enviará con el prefijo "📢 Aviso del administrador".',
+    'broadcast_send': 'Enviar comunicación',
+    'broadcast_confirm': '¿Enviar este mensaje a TODOS los usuarios de Telegram?',
 }
 
 # Dictionary containing all translations
