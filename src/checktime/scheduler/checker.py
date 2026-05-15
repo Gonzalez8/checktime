@@ -188,7 +188,6 @@ class CheckJCClient:
         if "/portal/employee" not in self._page.url:
             logger.info(f"Navigating to {self.portal_url}")
             self._page.goto(self.portal_url, wait_until="domcontentloaded")
-            self._page.wait_for_timeout(1500)
 
         if "/login" in self._page.url:
             raise CheckJCSessionLost(
@@ -196,24 +195,39 @@ class CheckJCClient:
                 f"(redirected to login)."
             )
 
-        btn_node = self._find_check_button()
-        if btn_node is None:
-            raise CheckJCFormError(
-                f"#btn-check not found on dashboard for {self.username}. "
-                f"CheckJC may have changed the layout."
+        # El boton #btn-check vive en light DOM pero esta oculto (clase
+        # `hidden-soft`) hasta que el AJAX a /rest/portal/employee/liveData.json
+        # responde con `portal_host` y el JS hace .show(). Esperamos a que sea
+        # interactuable; si no llega, capturamos contexto para diagnosticar.
+        try:
+            self._page.wait_for_selector("#btn-check", state="visible", timeout=15000)
+        except PWTimeout:
+            diag = self._page.evaluate(
+                "() => ({"
+                "url: location.href,"
+                "btnExists: !!document.querySelector('#btn-check'),"
+                "btnHidden: (function(){"
+                "  const e=document.querySelector('#btn-check');"
+                "  if(!e) return null;"
+                "  return {display: getComputedStyle(e).display, class: e.className,"
+                "    parentClass: e.parentElement ? e.parentElement.className : ''};"
+                "})()"
+                "})"
             )
-        logger.info(
-            f"Submitting check ({check_type}) for {self.username}, "
-            f"btn_nodeId={btn_node}"
-        )
+            raise CheckJCFormError(
+                f"#btn-check did not become visible on dashboard for {self.username} "
+                f"within 15s. Diagnostics: {diag}. "
+                f"Possible cause: the user has no portal_host configured in CheckJC."
+            )
 
-        # Algunas tenants requieren un click sobre #btn-check seguido de
-        # otro click en el modal "deviceid_self". Para el flow estándar
-        # de Jose el click directo en #btn-check basta.
-        self._cdp_click(btn_node)
+        logger.info(f"Submitting check ({check_type}) for {self.username}")
+        # Click vía Playwright (selectores normales bastan: #btn-check NO esta
+        # en shadow DOM, solo el login). El handler JS de CheckJC decide el
+        # flow: para deviceid_self sin confirmacion de ubicacion hace submit
+        # automatico del form interno; en otros casos abre un modal.
+        self._page.click("#btn-check")
 
-        # Esperar a que la UI reaccione: típicamente recarga la página o
-        # actualiza el listado de "Últimos fichajes" via AJAX.
+        # Esperar a que la UI reaccione: recarga o actualiza el listado.
         self._page.wait_for_timeout(3000)
 
         if "/login" in self._page.url or "/logout" in self._page.url:
