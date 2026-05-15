@@ -14,7 +14,7 @@ import concurrent.futures
 from checktime.scheduler.checker import (
     CheckJCClient,
     CheckJCIPBlocked,
-    CheckJCBadCredentials,
+    CheckJCLoginRejected,
     CheckJCSessionLost,
     CheckJCFormError,
     CheckJCUnexpectedResponse,
@@ -53,8 +53,13 @@ def _format_error_for_telegram(check_type, username, exc):
 
     if isinstance(exc, CheckJCIPBlocked):
         return f"🚫 {base}: {exc}"
-    if isinstance(exc, CheckJCBadCredentials):
-        return f"🔑 {base}: credenciales rechazadas. Revisa usuario/contraseña en la web."
+    if isinstance(exc, CheckJCLoginRejected):
+        return (
+            f"🚧 {base}: CheckJC rechazó el login. "
+            f"Puede ser credenciales mal escritas o un rate-limit silencioso del IP "
+            f"(intentos seguidos antes del bloqueo duro). "
+            f"Confirma haciendo login manual en la web."
+        )
     if isinstance(exc, CheckJCSessionLost):
         return f"⏳ {base}: sesión perdida durante el fichaje. Reintentará en el próximo ciclo."
     if isinstance(exc, CheckJCFormError):

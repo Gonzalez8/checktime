@@ -18,8 +18,11 @@ class CheckJCIPBlocked(CheckJCError):
     Suele liberarse en ~10 minutos."""
 
 
-class CheckJCBadCredentials(CheckJCError):
-    """Credenciales rechazadas (302 a /login sin banner de bloqueo)."""
+class CheckJCLoginRejected(CheckJCError):
+    """Login rechazado (302 a /login sin banner explícito de bloqueo).
+    CheckJC no distingue desde fuera entre credenciales malas y rate-limit
+    silencioso previo al lockout duro: ambos producen exactamente la misma
+    respuesta. Por eso esta excepción no afirma cuál es la causa."""
 
 
 class CheckJCSessionLost(CheckJCError):
@@ -169,10 +172,12 @@ class CheckJCClient:
                 f"Retry available in {mins} minutes (per server)."
             )
 
-        raise CheckJCBadCredentials(
-            f"CheckJC rejected credentials for {self.username} "
+        raise CheckJCLoginRejected(
+            f"CheckJC rejected the login for {self.username} "
             f"(status={r2.status}, location={location!r}). "
-            f"Verify username/password and check if the user is locked in CheckJC."
+            f"Cannot tell from the server response whether it's bad credentials "
+            f"or silent rate-limit before the hard lockout. "
+            f"Check if the user can log in via the web."
         )
 
     def perform_check(self, check_type: str):
