@@ -12,6 +12,7 @@ Salida esperada:
 """
 import sys
 import re
+import time
 import urllib.request
 import urllib.parse
 import http.cookiejar
@@ -85,7 +86,13 @@ def main(user, password, subdomain):
         "btn-login": "",
     }).encode()
 
-    print(f"\nPOST {login_url}")
+    # Simulamos el tiempo que un humano tarda en escribir el form.
+    # Si CheckJC tiene un threshold "POST < N seg después del GET → bot",
+    # un delay aquí lo evita.
+    print(f"\nSleeping 5s to simulate human typing time...")
+    time.sleep(5)
+
+    print(f"POST {login_url}")
     req = urllib.request.Request(
         login_url,
         data=data,
