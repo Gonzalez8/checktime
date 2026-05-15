@@ -140,13 +140,18 @@ class CheckJCClient:
 
         token, user_field, pass_field = self._extract_login_form(login_html)
 
-        # 2) POST /login con el form
+        # 2) POST /login con el form.
+        # Incluimos "btn-login": el server requiere este campo (el `name` del
+        # botón submit) como prueba de que el form fue enviado vía click,
+        # no construido a mano. Sin él, CheckJC rechaza el POST en silencio
+        # con 302 a /login, idéntico a unas credenciales malas, indistinguible.
         r2 = self._request.post(
             self.login_url,
             form={
                 "token": token,
                 user_field: self.username,
                 pass_field: self.password,
+                "btn-login": "",
             },
             headers={
                 **_browser_headers(self.base_url, self.login_url),

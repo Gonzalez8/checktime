@@ -56,6 +56,7 @@ def main(user, password, subdomain):
         "token": token,
         user_field: user,
         pass_field: password,
+        "btn-login": "",
     }).encode()
 
     print(f"\nPOST {login_url}")
