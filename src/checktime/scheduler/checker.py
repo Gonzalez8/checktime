@@ -40,19 +40,30 @@ class CheckJCUnexpectedResponse(CheckJCError):
 # UA de Chrome reciente. Sin esto y sin los headers Sec-Fetch-*, el server
 # de CheckJC (Server: IJCSVR) rechaza el POST de login en silencio (302 a /login).
 _CHROME_UA = (
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
 )
 
 
 def _browser_headers(base_url, referer, sec_fetch_site="same-origin"):
+    """Replica exactamente los headers que envía Chrome 147 al hacer
+    submit del form de CheckJC. Capturado con DevTools 'Copy as cURL'.
+    Cualquier subset reducido es rechazado por el server como bot."""
     return {
         "User-Agent": _CHROME_UA,
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
+        "Accept": (
+            "text/html,application/xhtml+xml,application/xml;q=0.9,"
+            "image/avif,image/webp,image/apng,*/*;q=0.8,"
+            "application/signed-exchange;v=b3;q=0.7"
+        ),
+        "Accept-Language": "es-ES,es;q=0.9",
+        "Cache-Control": "max-age=0",
         "Origin": base_url,
         "Referer": referer,
         "Upgrade-Insecure-Requests": "1",
+        "Sec-Ch-Ua": '"Google Chrome";v="147", "Not.A/Brand";v="8", "Chromium";v="147"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"macOS"',
         "Sec-Fetch-Dest": "document",
         "Sec-Fetch-Mode": "navigate",
         "Sec-Fetch-Site": sec_fetch_site,

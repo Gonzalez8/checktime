@@ -17,7 +17,29 @@ import urllib.parse
 import http.cookiejar
 
 
-UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+
+
+def _browser_headers(base, referer):
+    """Replica exactamente lo que envía Chrome 147 al hacer POST de login.
+    Capturado con DevTools 'Copy as cURL'."""
+    return {
+        "User-Agent": UA,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+        "Accept-Language": "es-ES,es;q=0.9",
+        "Cache-Control": "max-age=0",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Origin": base,
+        "Referer": referer,
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Ch-Ua": '"Google Chrome";v="147", "Not.A/Brand";v="8", "Chromium";v="147"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"macOS"',
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "same-origin",
+        "Sec-Fetch-User": "?1",
+    }
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -34,7 +56,11 @@ def main(user, password, subdomain):
     opener = urllib.request.build_opener(
         urllib.request.HTTPCookieProcessor(cj),
     )
-    opener.addheaders = [("User-Agent", UA)]
+    # Headers de GET (la primera navegación: Sec-Fetch-Site: none)
+    get_headers = _browser_headers(base, login_url)
+    get_headers["Sec-Fetch-Site"] = "none"
+    # urllib usa addheaders como lista de tuplas
+    opener.addheaders = list(get_headers.items())
 
     print(f"GET {login_url}")
     html = opener.open(login_url).read().decode("utf-8", errors="ignore")
@@ -63,14 +89,7 @@ def main(user, password, subdomain):
     req = urllib.request.Request(
         login_url,
         data=data,
-        headers={
-            "User-Agent": UA,
-            "Origin": base,
-            "Referer": login_url,
-            "Content-Type": "application/x-www-form-urlencoded",
-            "Sec-Fetch-Site": "same-origin",
-            "Sec-Fetch-Mode": "navigate",
-        },
+        headers=_browser_headers(base, login_url),
     )
     opener2 = urllib.request.build_opener(
         urllib.request.HTTPCookieProcessor(cj),
