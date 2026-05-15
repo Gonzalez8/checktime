@@ -11,7 +11,14 @@ from datetime import datetime
 import threading
 import concurrent.futures
 
-from checktime.scheduler.checker import CheckJCClient
+from checktime.scheduler.checker import (
+    CheckJCClient,
+    CheckJCIPBlocked,
+    CheckJCBadCredentials,
+    CheckJCSessionLost,
+    CheckJCFormError,
+    CheckJCUnexpectedResponse,
+)
 from checktime.shared.config import get_log_level
 from checktime.utils.telegram import TelegramClient
 from checktime.shared.services.holiday_manager import HolidayManager
@@ -19,16 +26,43 @@ from checktime.shared.services.user_manager import UserManager
 from checktime.shared.services.schedule_manager import ScheduleManager
 from checktime.web import create_app
 
-# Configure logging
+# Configure logging.
+# IMPORTANT: force=True garantiza que estos handlers se apliquen aunque
+# alguno de los imports previos (Flask / extensiones) ya haya tocado el
+# root logger. Sin force=True, basicConfig se ignora silenciosamente y
+# logger.error() acaba en /dev/null (lo que explicaba que los errores
+# llegasen a Telegram pero no apareciesen en `docker logs` ni en el fichero).
 logging.basicConfig(
     level=getattr(logging, get_log_level()),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler("/var/log/checktime/scheduler.log"),
         logging.StreamHandler()
-    ]
+    ],
+    force=True,
 )
 logger = logging.getLogger(__name__)
+
+
+def _format_error_for_telegram(check_type, username, exc):
+    """Construye un mensaje claro para Telegram según el tipo de excepción.
+    Mantiene la traza para el log de fichero, pero solo manda al usuario lo
+    accionable."""
+    exc_name = type(exc).__name__
+    base = f"Check {check_type} for {username}"
+
+    if isinstance(exc, CheckJCIPBlocked):
+        return f"🚫 {base}: CheckJC bloqueó el IP por intentos fallidos. Se desbloquea solo en ~10 min."
+    if isinstance(exc, CheckJCBadCredentials):
+        return f"🔑 {base}: credenciales rechazadas. Revisa usuario/contraseña en la web."
+    if isinstance(exc, CheckJCSessionLost):
+        return f"⏳ {base}: sesión perdida durante el fichaje. Reintentará en el próximo ciclo."
+    if isinstance(exc, CheckJCFormError):
+        return f"🧩 {base}: CheckJC cambió el HTML — los selectores ya no casan. Requiere actualización del checker."
+    if isinstance(exc, CheckJCUnexpectedResponse):
+        return f"❓ {base}: respuesta HTTP inesperada de CheckJC ({exc})."
+    # Cualquier otro tipo (timeout de red, error Playwright, etc.)
+    return f"❌ {base}: {exc_name}: {exc}"
 
 # Initialize Telegram client
 telegram_client = TelegramClient()
@@ -131,11 +165,15 @@ def perform_check_for_user(user, check_type):
                 if (hasattr(user, 'telegram_chat_id') and user.telegram_chat_id and getattr(user, 'telegram_notifications_enabled', False)):
                     telegram_client.send_message(f"{icon} Check {check_type} completed successfully", chat_id=user.telegram_chat_id)
     except Exception as e:
-        error_msg = f"Error during check {check_type} for user {user.username}: {str(e)}"
-        logger.error(error_msg)
-        if hasattr(user, 'telegram_chat_id') and user.telegram_chat_id:
-            if (hasattr(user, 'telegram_chat_id') and user.telegram_chat_id and getattr(user, 'telegram_notifications_enabled', False)):
-                telegram_client.send_message(f"❌ {error_msg}", chat_id=user.telegram_chat_id)
+        # logger.exception incluye el traceback completo: tipo de excepción,
+        # mensaje y línea exacta donde se lanzó. Va al fichero y a stdout.
+        logger.exception(
+            "Error during check %s for user %s (%s)",
+            check_type, user.username, type(e).__name__,
+        )
+        telegram_msg = _format_error_for_telegram(check_type, user.username, e)
+        if hasattr(user, 'telegram_chat_id') and user.telegram_chat_id and getattr(user, 'telegram_notifications_enabled', False):
+            telegram_client.send_message(telegram_msg, chat_id=user.telegram_chat_id)
 
 def get_users_to_check_now():
     """
