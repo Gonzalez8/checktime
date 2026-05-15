@@ -87,9 +87,17 @@
                            href="{{ url_for('holidays.index') }}">{{ _('holidays') }}</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link nav-link-modern {% if request.blueprint == 'schedules' %}active{% endif %}" 
+                        <a class="nav-link nav-link-modern {% if request.blueprint == 'schedules' %}active{% endif %}"
                            href="{{ url_for('schedules.index') }}">{{ _('schedules') }}</a>
                     </li>
+                    {% if current_user.is_admin %}
+                    <li class="nav-item">
+                        <a class="nav-link nav-link-modern {% if request.blueprint == 'admin' %}active{% endif %}"
+                           href="{{ url_for('admin.broadcast') }}">
+                            <i class="bi bi-megaphone"></i> {{ _('broadcast') }}
+                        </a>
+                    </li>
+                    {% endif %}
                     {% endif %}
                 </ul>
                 <ul class="navbar-nav">
