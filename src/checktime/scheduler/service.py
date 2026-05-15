@@ -52,7 +52,7 @@ def _format_error_for_telegram(check_type, username, exc):
     base = f"Check {check_type} for {username}"
 
     if isinstance(exc, CheckJCIPBlocked):
-        return f"🚫 {base}: CheckJC bloqueó el IP por intentos fallidos. Se desbloquea solo en ~10 min."
+        return f"🚫 {base}: {exc}"
     if isinstance(exc, CheckJCBadCredentials):
         return f"🔑 {base}: credenciales rechazadas. Revisa usuario/contraseña en la web."
     if isinstance(exc, CheckJCSessionLost):

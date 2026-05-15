@@ -128,10 +128,11 @@ class CheckJCClient:
         login_html = r.text()
 
         # Si el IP está pre-bloqueado, el server ya muestra el banner en el GET.
-        if self._is_ip_blocked(login_html):
+        mins = self._ip_block_minutes(login_html)
+        if mins is not None:
             raise CheckJCIPBlocked(
-                f"CheckJC reports this IP is blocked for {self.username}. "
-                f"Wait ~10 minutes before retrying."
+                f"CheckJC blocked this IP for {self.username}. "
+                f"Retry available in {mins} minutes (per server)."
             )
 
         token, user_field, pass_field = self._extract_login_form(login_html)
@@ -161,10 +162,11 @@ class CheckJCClient:
         # Puede ser por IP bloqueada (con banner) o por credenciales malas
         # (sin banner, body puede tener el form vacío o estar vacío).
         body = r2.text() if r2.status == 200 else ""
-        if body and self._is_ip_blocked(body):
+        mins = self._ip_block_minutes(body) if body else None
+        if mins is not None:
             raise CheckJCIPBlocked(
                 f"CheckJC blocked this IP after failed attempts for {self.username}. "
-                f"Wait ~10 minutes before retrying."
+                f"Retry available in {mins} minutes (per server)."
             )
 
         raise CheckJCBadCredentials(
@@ -257,18 +259,22 @@ class CheckJCClient:
     # --- helpers ---
 
     @staticmethod
-    def _is_ip_blocked(html):
-        """Detecta el banner de IP bloqueada que CheckJC sirve cuando hay
-        demasiados intentos fallidos consecutivos."""
+    def _ip_block_minutes(html):
+        """Si el HTML contiene el banner de IP bloqueada, devuelve los minutos
+        que indica el server (escalan con reincidencia: 10, 20, ...). Si no
+        hay banner, devuelve None."""
         if not html:
-            return False
-        markers = (
-            "dirección IP",
-            "ha sido bloqueada",
-            "intentos de acceso incorrectos",
-        )
+            return None
+        markers = ("dirección IP", "ha sido bloqueada", "intentos de acceso incorrectos")
         lower = html.lower()
-        return sum(1 for m in markers if m.lower() in lower) >= 2
+        if sum(1 for m in markers if m.lower() in lower) < 2:
+            return None
+        m = re.search(r'dentro de\s+(\d+)\s+minutos?', html, re.IGNORECASE)
+        return int(m.group(1)) if m else 0
+
+    @classmethod
+    def _is_ip_blocked(cls, html):
+        return cls._ip_block_minutes(html) is not None
 
     @staticmethod
     def _extract_login_form(html):
