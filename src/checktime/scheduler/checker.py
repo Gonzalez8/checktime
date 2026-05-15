@@ -1,6 +1,6 @@
 import logging
 import re
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 
 from checktime.shared.config import get_selenium_timeout, get_simulation_mode
 
@@ -19,10 +19,8 @@ class CheckJCIPBlocked(CheckJCError):
 
 
 class CheckJCLoginRejected(CheckJCError):
-    """Login rechazado (302 a /login sin banner explícito de bloqueo).
-    CheckJC no distingue desde fuera entre credenciales malas y rate-limit
-    silencioso previo al lockout duro: ambos producen exactamente la misma
-    respuesta. Por eso esta excepción no afirma cuál es la causa."""
+    """Login rechazado: el navegador no llegó al dashboard tras el submit.
+    Puede ser credenciales malas o rate-limit silencioso."""
 
 
 class CheckJCSessionLost(CheckJCError):
@@ -30,57 +28,32 @@ class CheckJCSessionLost(CheckJCError):
 
 
 class CheckJCFormError(CheckJCError):
-    """No se pudo parsear el form del login o del dashboard.
+    """No se pudo localizar el form del login o del dashboard.
     Indica un cambio en el HTML de CheckJC que rompe los selectores."""
 
 
 class CheckJCUnexpectedResponse(CheckJCError):
-    """Respuesta HTTP fuera de lo esperado (5xx, status raro, etc.)."""
+    """Respuesta HTTP fuera de lo esperado o navegación a sitio inesperado."""
 
-# UA de Chrome reciente. Sin esto y sin los headers Sec-Fetch-*, el server
-# de CheckJC (Server: IJCSVR) rechaza el POST de login en silencio (302 a /login).
+
 _CHROME_UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
 )
 
 
-def _browser_headers(base_url, referer, sec_fetch_site="same-origin"):
-    """Replica exactamente los headers que envía Chrome 147 al hacer
-    submit del form de CheckJC. Capturado con DevTools 'Copy as cURL'.
-    Cualquier subset reducido es rechazado por el server como bot."""
-    return {
-        "User-Agent": _CHROME_UA,
-        "Accept": (
-            "text/html,application/xhtml+xml,application/xml;q=0.9,"
-            "image/avif,image/webp,image/apng,*/*;q=0.8,"
-            "application/signed-exchange;v=b3;q=0.7"
-        ),
-        "Accept-Language": "es-ES,es;q=0.9",
-        "Cache-Control": "max-age=0",
-        "Origin": base_url,
-        "Referer": referer,
-        "Upgrade-Insecure-Requests": "1",
-        "Sec-Ch-Ua": '"Google Chrome";v="147", "Not.A/Brand";v="8", "Chromium";v="147"',
-        "Sec-Ch-Ua-Mobile": "?0",
-        "Sec-Ch-Ua-Platform": '"macOS"',
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": sec_fetch_site,
-        "Sec-Fetch-User": "?1",
-    }
-
-
 class CheckJCClient:
-    """Cliente HTTP para CheckJC v7.4.
+    """Cliente para CheckJC v7.4 usando Chromium real vía Playwright.
 
-    CheckJC v7.4 migró el login a Stencil + Declarative Shadow DOM closed con
-    nombres de campos aleatorios por render. Selenium ya no puede interactuar
-    con el DOM. La solución es hacer POST HTTP directos contra los endpoints,
-    reproduciendo lo que haría el navegador.
+    Necesario porque CheckJC v7.4 detecta clientes HTTP "ligeros" (urllib,
+    curl, curl_cffi, incluso el módulo HTTP de Playwright) y los rechaza
+    en silencio, independientemente de IP o headers. La única forma fiable
+    es lanzar un navegador real.
 
-    Mantiene la misma interfaz pública que la versión Selenium para que el
-    scheduler (service.py) no necesite cambios.
+    El form de login vive dentro de `<sd-login>` con Declarative Shadow DOM
+    closed. Selenium no podía entrar. Playwright tampoco con `page.locator`
+    estándar. Solución: usar CDP (DOM.getDocument con pierce=True) para
+    localizar los inputs y enviar eventos directos.
     """
 
     def __init__(self, username, password, subdomain):
@@ -95,7 +68,10 @@ class CheckJCClient:
         self.portal_url = f"{self.base_url}/portal/employee"
 
         self._pw = None
-        self._request = None
+        self._browser = None
+        self._context = None
+        self._page = None
+        self._cdp = None
         self._timeout_ms = get_selenium_timeout() * 1000
 
     def __enter__(self):
@@ -103,171 +79,151 @@ class CheckJCClient:
             logger.info(f"Simulation mode enabled for {self.username}")
             return self
 
-        # Playwright API HTTP sin lanzar navegador: usa solo el driver Node
-        # que viene con `pip install playwright`. No requiere chromium binario.
         self._pw = sync_playwright().start()
-        self._request = self._pw.request.new_context(
-            user_agent=_CHROME_UA,
-            extra_http_headers={"Accept-Language": "es-ES,es;q=0.9,en;q=0.8"},
-            timeout=self._timeout_ms,
+        self._browser = self._pw.chromium.launch(
+            headless=True,
+            args=[
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-blink-features=AutomationControlled",
+            ],
         )
-        logger.info(f"Playwright request context inicializado para {self.username}")
+        self._context = self._browser.new_context(
+            user_agent=_CHROME_UA,
+            locale="es-ES",
+            viewport={"width": 1280, "height": 800},
+        )
+        self._context.set_default_timeout(self._timeout_ms)
+        self._page = self._context.new_page()
+        self._cdp = self._context.new_cdp_session(self._page)
+        logger.info(f"Chromium iniciado para {self.username}")
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if self._request:
-            self._request.dispose()
-        if self._pw:
-            self._pw.stop()
-        if self._request:
-            logger.info(f"Playwright cerrado para {self.username}")
+        for closer in (
+            getattr(self._context, "close", None),
+            getattr(self._browser, "close", None),
+            getattr(self._pw, "stop", None),
+        ):
+            if closer is None:
+                continue
+            try:
+                closer()
+            except Exception:
+                pass
+        if self._browser:
+            logger.info(f"Chromium cerrado para {self.username}")
 
     def login(self):
         if SIMULATION_MODE:
             logger.info(f"Simulation: Login successful for {self.username}")
             return True
 
-        # 1) GET /login para obtener el form fresco (token + nombres random de campos)
-        r = self._request.get(
-            self.login_url,
-            headers={
-                **_browser_headers(self.base_url, self.login_url, sec_fetch_site="none"),
-                "Sec-Fetch-Site": "none",
-            },
-        )
-        if r.status != 200:
-            raise CheckJCUnexpectedResponse(
-                f"GET {self.login_url} returned status={r.status}"
-            )
-        login_html = r.text()
+        logger.info(f"Navigating to {self.login_url}")
+        self._page.goto(self.login_url, wait_until="domcontentloaded")
+        # Hidratación de Stencil + render del template shadow DOM closed.
+        self._page.wait_for_timeout(2000)
 
-        # Si el IP está pre-bloqueado, el server ya muestra el banner en el GET.
-        mins = self._ip_block_minutes(login_html)
+        # Detección temprana de IP bloqueada (banner en /etc/login)
+        body_text = self._page.content()
+        mins = self._ip_block_minutes(body_text)
         if mins is not None:
             raise CheckJCIPBlocked(
                 f"CheckJC blocked this IP for {self.username}. "
                 f"Retry available in {mins} minutes (per server)."
             )
 
-        token, user_field, pass_field = self._extract_login_form(login_html)
-
-        # 2) POST /login con el form.
-        # Incluimos "btn-login": el server requiere este campo (el `name` del
-        # botón submit) como prueba de que el form fue enviado vía click,
-        # no construido a mano. Sin él, CheckJC rechaza el POST en silencio
-        # con 302 a /login, idéntico a unas credenciales malas, indistinguible.
-        r2 = self._request.post(
-            self.login_url,
-            form={
-                "token": token,
-                user_field: self.username,
-                pass_field: self.password,
-                "btn-login": "",
-            },
-            headers={
-                **_browser_headers(self.base_url, self.login_url),
-                "Content-Type": "application/x-www-form-urlencoded",
-            },
-            max_redirects=0,
+        # Buscamos inputs y botón dentro del shadow DOM closed vía CDP.
+        user_node, pass_node, btn_node = self._find_login_elements()
+        logger.info(
+            f"Form found via CDP: user_nodeId={user_node}, "
+            f"pass_nodeId={pass_node}, btn_nodeId={btn_node}"
         )
-        location = r2.headers.get("location", "")
 
-        # Login OK: 302 a algo que NO sea /login.
-        if r2.status == 302 and "/login" not in location:
-            logger.info(f"Login successful for {self.username}, redirected to {location}")
-            return True
+        # Rellenar inputs.
+        self._cdp_focus(user_node)
+        self._cdp.send("Input.insertText", {"text": self.username})
+        self._cdp_focus(pass_node)
+        self._cdp.send("Input.insertText", {"text": self.password})
 
-        # 200 con body: el server devuelve la página de login otra vez.
-        # Puede ser por IP bloqueada (con banner) o por credenciales malas
-        # (sin banner, body puede tener el form vacío o estar vacío).
-        body = r2.text() if r2.status == 200 else ""
-        mins = self._ip_block_minutes(body) if body else None
-        if mins is not None:
-            raise CheckJCIPBlocked(
-                f"CheckJC blocked this IP after failed attempts for {self.username}. "
-                f"Retry available in {mins} minutes (per server)."
+        # Click sobre el botón en sus coordenadas reales (Input.dispatchMouseEvent).
+        self._cdp_click(btn_node)
+        logger.info(f"Login button clicked for {self.username}")
+
+        # Esperar a que el navegador salga de /login. Si tras N seg seguimos
+        # ahí, fue rechazo (el server muestra el form de login otra vez).
+        try:
+            self._page.wait_for_url(
+                lambda url: "/login" not in url, timeout=15000
+            )
+        except PWTimeout:
+            # ¿Llegó banner de IP bloqueada tras el intento?
+            mins = self._ip_block_minutes(self._page.content())
+            if mins is not None:
+                raise CheckJCIPBlocked(
+                    f"CheckJC blocked this IP after failed attempts for {self.username}. "
+                    f"Retry available in {mins} minutes (per server)."
+                )
+            raise CheckJCLoginRejected(
+                f"CheckJC rejected the login for {self.username}: "
+                f"still at {self._page.url!r} after submit. "
+                f"Check if the user can log in via the web."
             )
 
-        raise CheckJCLoginRejected(
-            f"CheckJC rejected the login for {self.username} "
-            f"(status={r2.status}, location={location!r}). "
-            f"Cannot tell from the server response whether it's bad credentials "
-            f"or silent rate-limit before the hard lockout. "
-            f"Check if the user can log in via the web."
-        )
+        logger.info(f"Login successful for {self.username}, landed at {self._page.url}")
+        return True
 
     def perform_check(self, check_type: str):
         """Realiza un fichaje (entrada o salida).
 
-        CheckJC v7.4 no distingue 'in' / 'out' en el POST: registra un check
-        en el momento, el server decide si es entrada o salida según el último
-        estado del usuario. El parámetro check_type se mantiene solo para
-        compatibilidad con la interfaz anterior y para logging.
+        CheckJC v7.4 no distingue 'in' / 'out' en el click: registra un
+        check en el momento, el server decide qué es. El parámetro se
+        mantiene para compatibilidad con la interfaz anterior y logging.
         """
         if SIMULATION_MODE:
             logger.info(f"Simulation: Check {check_type} completed for {self.username}")
             return True
 
-        # 1) GET dashboard para extraer el rnd y validators activos
-        r = self._request.get(
-            self.portal_url,
-            headers=_browser_headers(self.base_url, self.login_url),
-        )
-        # Si caímos en /login, la sesión se perdió entre login() y aquí.
-        if r.url.endswith("/login") or (r.status == 200 and 'class="form-login' in r.text()):
+        # Después del login el navegador suele estar ya en /portal/employee.
+        if "/portal/employee" not in self._page.url:
+            logger.info(f"Navigating to {self.portal_url}")
+            self._page.goto(self.portal_url, wait_until="domcontentloaded")
+            self._page.wait_for_timeout(1500)
+
+        if "/login" in self._page.url:
             raise CheckJCSessionLost(
                 f"Lost session before submitting check {check_type} for {self.username} "
-                f"(GET portal redirected back to login)."
-            )
-        if r.status != 200:
-            raise CheckJCUnexpectedResponse(
-                f"GET {self.portal_url} returned status={r.status}"
+                f"(redirected to login)."
             )
 
-        check_form = self._extract_check_form(r.text())
-        if not check_form:
+        btn_node = self._find_check_button()
+        if btn_node is None:
             raise CheckJCFormError(
-                f"No usable .form_check found in dashboard HTML for {self.username}. "
-                f"This usually means CheckJC changed the dashboard layout."
+                f"#btn-check not found on dashboard for {self.username}. "
+                f"CheckJC may have changed the layout."
             )
-
-        # 2) POST de check con los campos del form correcto
         logger.info(
-            f"Submitting check ({check_type}) for {self.username} "
-            f"with validator={check_form['validator']}, rnd={check_form['rnd']}"
+            f"Submitting check ({check_type}) for {self.username}, "
+            f"btn_nodeId={btn_node}"
         )
-        r2 = self._request.post(
-            self.portal_url,
-            form={
-                "gps": "NA",  # sin geolocation (server context)
-                "validator": check_form["validator"],
-                "checkpoint_identifier": "",
-                "rnd": check_form["rnd"],
-            },
-            headers={
-                **_browser_headers(self.base_url, self.portal_url),
-                "Content-Type": "application/x-www-form-urlencoded",
-                "X-Requested-With": "XMLHttpRequest",
-            },
-            max_redirects=0,
-        )
-        location = r2.headers.get("location", "")
 
-        # Sesión perdida (401, o redirect a /login/logout).
-        if r2.status == 401 or "/login" in location or "/logout" in location:
+        # Algunas tenants requieren un click sobre #btn-check seguido de
+        # otro click en el modal "deviceid_self". Para el flow estándar
+        # de Jose el click directo en #btn-check basta.
+        self._cdp_click(btn_node)
+
+        # Esperar a que la UI reaccione: típicamente recarga la página o
+        # actualiza el listado de "Últimos fichajes" via AJAX.
+        self._page.wait_for_timeout(3000)
+
+        if "/login" in self._page.url or "/logout" in self._page.url:
             raise CheckJCSessionLost(
-                f"Session lost while submitting check {check_type} for {self.username} "
-                f"(status={r2.status}, location={location!r})."
-            )
-
-        if r2.status not in (200, 302):
-            raise CheckJCUnexpectedResponse(
-                f"POST check returned unexpected status={r2.status}, location={location!r}"
+                f"Session dropped after check {check_type} for {self.username} "
+                f"(at {self._page.url!r})."
             )
 
         logger.info(
-            f"Check {check_type} completed for {self.username} "
-            f"(status={r2.status}, validator={check_form['validator']})"
+            f"Check {check_type} submitted for {self.username} (at {self._page.url})"
         )
         return True
 
@@ -279,11 +235,102 @@ class CheckJCClient:
 
     # --- helpers ---
 
+    def _cdp_focus(self, node_id):
+        self._cdp.send("DOM.focus", {"nodeId": node_id})
+
+    def _cdp_click(self, node_id):
+        """Envía un click real (mousePressed + mouseReleased) en el centro
+        del box del nodo. Funciona aunque el nodo viva dentro de un shadow
+        root closed: las coordenadas son globales."""
+        box = self._cdp.send("DOM.getBoxModel", {"nodeId": node_id})
+        c = box["model"]["content"]
+        x = (c[0] + c[2]) / 2
+        y = (c[1] + c[5]) / 2
+        for event_type in ("mousePressed", "mouseReleased"):
+            self._cdp.send("Input.dispatchMouseEvent", {
+                "type": event_type, "x": x, "y": y,
+                "button": "left", "clickCount": 1,
+            })
+
+    def _find_login_elements(self):
+        """Recorre el DOM (incluido shadow DOM closed via pierce=True) y
+        devuelve los nodeIds del primer username/password/btn-login visibles."""
+        dom = self._cdp.send("DOM.getDocument", {"depth": -1, "pierce": True})
+        user_nodes = []
+        pass_nodes = []
+        btn_nodes = []
+
+        def walk(node):
+            name = node.get("nodeName", "").lower()
+            attrs = self._attrs(node)
+            if name == "input":
+                cls = attrs.get("class", "")
+                if "form_username" in cls:
+                    user_nodes.append(node["nodeId"])
+                elif "form_password" in cls:
+                    pass_nodes.append(node["nodeId"])
+            elif name == "button" and attrs.get("id") == "btn-login":
+                btn_nodes.append(node["nodeId"])
+            for child in (node.get("children") or []):
+                walk(child)
+            for child in (node.get("shadowRoots") or []):
+                walk(child)
+            if node.get("contentDocument"):
+                walk(node["contentDocument"])
+
+        walk(dom["root"])
+        user = self._first_visible(user_nodes)
+        pwd = self._first_visible(pass_nodes)
+        btn = self._first_visible(btn_nodes)
+        if not (user and pwd and btn):
+            raise CheckJCFormError(
+                f"Login form elements not found in DOM "
+                f"(usernames={len(user_nodes)}, passwords={len(pass_nodes)}, "
+                f"buttons={len(btn_nodes)}, visible={(bool(user), bool(pwd), bool(btn))})"
+            )
+        return user, pwd, btn
+
+    def _find_check_button(self):
+        dom = self._cdp.send("DOM.getDocument", {"depth": -1, "pierce": True})
+        candidates = []
+
+        def walk(node):
+            attrs = self._attrs(node)
+            if attrs.get("id") == "btn-check":
+                candidates.append(node["nodeId"])
+            for child in (node.get("children") or []):
+                walk(child)
+            for child in (node.get("shadowRoots") or []):
+                walk(child)
+            if node.get("contentDocument"):
+                walk(node["contentDocument"])
+
+        walk(dom["root"])
+        return self._first_visible(candidates)
+
+    def _first_visible(self, node_ids):
+        for nid in node_ids:
+            try:
+                box = self._cdp.send("DOM.getBoxModel", {"nodeId": nid})
+                c = box["model"]["content"]
+                if abs(c[2] - c[0]) > 0 and abs(c[5] - c[1]) > 0:
+                    return nid
+            except Exception:
+                continue
+        return None
+
+    @staticmethod
+    def _attrs(node):
+        out = {}
+        a = node.get("attributes") or []
+        for i in range(0, len(a), 2):
+            out[a[i]] = a[i + 1]
+        return out
+
     @staticmethod
     def _ip_block_minutes(html):
         """Si el HTML contiene el banner de IP bloqueada, devuelve los minutos
-        que indica el server (escalan con reincidencia: 10, 20, ...). Si no
-        hay banner, devuelve None."""
+        que indica el server. Si no hay banner, devuelve None."""
         if not html:
             return None
         markers = ("dirección IP", "ha sido bloqueada", "intentos de acceso incorrectos")
@@ -292,63 +339,3 @@ class CheckJCClient:
             return None
         m = re.search(r'dentro de\s+(\d+)\s+minutos?', html, re.IGNORECASE)
         return int(m.group(1)) if m else 0
-
-    @classmethod
-    def _is_ip_blocked(cls, html):
-        return cls._ip_block_minutes(html) is not None
-
-    @staticmethod
-    def _extract_login_form(html):
-        """Devuelve (token, username_field_name, password_field_name) parseando
-        el HTML crudo del login. El form vive dentro de <template
-        shadowrootmode="closed"> y los nombres de los campos son aleatorios
-        por render."""
-        m = re.search(
-            r'<form[^>]*class="[^"]*form-login[^"]*"[^>]*>(.*?)</form>',
-            html, re.DOTALL,
-        )
-        if not m:
-            raise CheckJCFormError(
-                "Login form not found in HTML. CheckJC may have changed the page layout."
-            )
-        body = m.group(1)
-
-        token_m = re.search(r'name="token"\s+value="([^"]+)"', body)
-        user_m = re.search(
-            r'class="[^"]*form_username[^"]*"[^>]*?\bname="([^"]+)"', body,
-        )
-        pass_m = re.search(
-            r'class="[^"]*form_password[^"]*"[^>]*?\bname="([^"]+)"', body,
-        )
-        if not (token_m and user_m and pass_m):
-            missing = [k for k, v in (
-                ("token", token_m), ("username field", user_m), ("password field", pass_m)
-            ) if not v]
-            raise CheckJCFormError(
-                f"Login form parsed but missing fields: {missing}"
-            )
-        return token_m.group(1), user_m.group(1), pass_m.group(1)
-
-    @staticmethod
-    def _extract_check_form(html):
-        """Busca un form .form_check válido en el dashboard y devuelve sus
-        campos clave (validator, rnd). Prefiere 'deviceid_self' (el más
-        simple: no requiere geo ni QR ni validación de jornada)."""
-        preferred = ("deviceid_self", "free_checks", "journey_validator")
-        forms = {}
-        for fm in re.finditer(
-            r'<form[^>]*class="form_check"[^>]*>(.*?)</form>',
-            html, re.DOTALL,
-        ):
-            body = fm.group(1)
-            validator_m = re.search(r'name="validator"\s+value="([^"]+)"', body)
-            rnd_m = re.search(r'name="rnd"\s+value="(\d+)"', body)
-            if validator_m and rnd_m:
-                forms[validator_m.group(1)] = {
-                    "validator": validator_m.group(1),
-                    "rnd": rnd_m.group(1),
-                }
-        for v in preferred:
-            if v in forms:
-                return forms[v]
-        return next(iter(forms.values()), None)
