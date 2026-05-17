@@ -34,15 +34,39 @@
                 {{ _('broadcast_no_recipients') }}
             </div>
         {% else %}
-            <p>
-                <i class="bi bi-people"></i>
-                <strong>{{ recipient_count }}</strong> {{ _('broadcast_recipients_count') }}:
-                <span class="text-muted">
-                    {{ recipients | map(attribute='username') | join(', ') }}
-                </span>
-            </p>
+            <form method="POST" action="{{ url_for('admin.broadcast') }}" id="broadcast-form">
+                <div class="mb-3">
+                    <label class="form-label d-flex justify-content-between align-items-center">
+                        <span><i class="bi bi-people"></i> {{ _('broadcast_recipients_label') }}</span>
+                        <span class="text-muted small">
+                            <span id="recipient-counter">{{ recipient_count }}</span>/{{ recipient_count }}
+                            {{ _('broadcast_recipients_count') }}
+                        </span>
+                    </label>
+                    <div class="border rounded p-2" style="max-height: 240px; overflow-y: auto;">
+                        <div class="form-check border-bottom pb-2 mb-2">
+                            <input class="form-check-input" type="checkbox" id="select-all-recipients" checked>
+                            <label class="form-check-label fw-semibold" for="select-all-recipients">
+                                {{ _('broadcast_select_all') }}
+                            </label>
+                        </div>
+                        {% for user in recipients %}
+                        <div class="form-check">
+                            <input class="form-check-input recipient-checkbox"
+                                   type="checkbox"
+                                   name="recipient_ids"
+                                   value="{{ user.id }}"
+                                   id="recipient-{{ user.id }}"
+                                   checked>
+                            <label class="form-check-label" for="recipient-{{ user.id }}">
+                                {{ user.username }}
+                                <span class="text-muted small">— {{ user.email }}</span>
+                            </label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
 
-            <form method="POST" action="{{ url_for('admin.broadcast') }}">
                 <div class="mb-3">
                     <label for="message" class="form-label">
                         {{ _('broadcast_message_label') }}
@@ -68,12 +92,53 @@
                     <button
                         type="submit"
                         class="btn btn-primary"
-                        onclick="return confirm('{{ _('broadcast_confirm') }}');"
+                        id="broadcast-submit"
                     >
                         <i class="bi bi-send"></i> {{ _('broadcast_send') }}
                     </button>
                 </div>
             </form>
+
+            <script>
+                (function () {
+                    const selectAll = document.getElementById('select-all-recipients');
+                    const checkboxes = Array.from(document.querySelectorAll('.recipient-checkbox'));
+                    const counter = document.getElementById('recipient-counter');
+                    const submitBtn = document.getElementById('broadcast-submit');
+                    const confirmAll = {{ _('broadcast_confirm_all') | tojson }};
+                    const confirmSome = {{ _('broadcast_confirm_some') | tojson }};
+
+                    function updateCounter() {
+                        const selected = checkboxes.filter(cb => cb.checked).length;
+                        counter.textContent = selected;
+                        selectAll.checked = selected === checkboxes.length;
+                        selectAll.indeterminate = selected > 0 && selected < checkboxes.length;
+                    }
+
+                    selectAll.addEventListener('change', function () {
+                        checkboxes.forEach(cb => { cb.checked = selectAll.checked; });
+                        updateCounter();
+                    });
+
+                    checkboxes.forEach(cb => cb.addEventListener('change', updateCounter));
+
+                    document.getElementById('broadcast-form').addEventListener('submit', function (e) {
+                        const selected = checkboxes.filter(cb => cb.checked).length;
+                        if (selected === 0) {
+                            return;
+                        }
+                        const allSelected = selected === checkboxes.length;
+                        const msg = allSelected
+                            ? confirmAll
+                            : confirmSome.replace('{count}', selected);
+                        if (!confirm(msg)) {
+                            e.preventDefault();
+                        }
+                    });
+
+                    updateCounter();
+                })();
+            </script>
         {% endif %}
     </div>
 </div>

@@ -46,13 +46,13 @@ def admin_required(view):
 @admin_required
 def broadcast():
     user_manager = UserManager()
-    recipients = user_manager.get_all_with_telegram_configured()
+    candidates = user_manager.get_all_with_telegram_configured()
 
     if request.method == "GET":
         return render_template(
             "admin/broadcast.html",
-            recipient_count=len(recipients),
-            recipients=recipients,
+            recipient_count=len(candidates),
+            recipients=candidates,
         )
 
     message = (request.form.get("message") or "").strip()
@@ -60,12 +60,24 @@ def broadcast():
         flash("El mensaje no puede estar vacío.", "warning")
         return redirect(url_for("admin.broadcast"))
 
+    candidates_by_id = {user.id: user for user in candidates}
+
+    selected_ids = []
+    for raw in request.form.getlist("recipient_ids"):
+        try:
+            selected_ids.append(int(raw))
+        except (TypeError, ValueError):
+            continue
+
+    targets = [candidates_by_id[uid] for uid in selected_ids if uid in candidates_by_id]
+    if not targets:
+        flash("Selecciona al menos un destinatario.", "warning")
+        return redirect(url_for("admin.broadcast"))
+
     telegram = TelegramClient()
     sent = []
     failed = []
-    for user in recipients:
-        if not getattr(user, "telegram_chat_id", None):
-            continue
+    for user in targets:
         ok = telegram.send_message(
             f"📢 *Aviso del administrador*\n\n{message}",
             chat_id=user.telegram_chat_id,
@@ -74,8 +86,8 @@ def broadcast():
         (sent if ok else failed).append(user.username)
 
     logger.info(
-        "Broadcast issued by %s: %d sent, %d failed",
-        current_user.username, len(sent), len(failed),
+        "Broadcast issued by %s to %d users: %d sent, %d failed",
+        current_user.username, len(targets), len(sent), len(failed),
     )
 
     if failed:
@@ -100,6 +112,37 @@ def users():
         temporary_password=None,
         target_user=None,
     )
+
+
+@admin_bp.route("/users/<int:user_id>/delete", methods=["POST"])
+@login_required
+@admin_required
+def delete_user(user_id):
+    user_manager = UserManager()
+    target = user_manager.get_by_id(user_id)
+    if target is None:
+        abort(404)
+
+    lang = _lang()
+    if target.id == current_user.id:
+        flash(get_translation("admin_delete_self_blocked", lang), "warning")
+        return redirect(url_for("admin.users"))
+
+    if target.is_admin and user_manager.count_admins() <= 1:
+        flash(get_translation("admin_delete_last_admin_blocked", lang), "warning")
+        return redirect(url_for("admin.users"))
+
+    deleted_username = target.username
+    if not user_manager.delete_user(user_id):
+        flash(get_translation("admin_delete_failed", lang), "danger")
+        return redirect(url_for("admin.users"))
+
+    logger.info("Admin %s deleted user %s", current_user.username, deleted_username)
+    flash(
+        get_translation("admin_delete_success", lang).format(username=deleted_username),
+        "success",
+    )
+    return redirect(url_for("admin.users"))
 
 
 @admin_bp.route("/users/<int:user_id>/reset-password", methods=["POST"])

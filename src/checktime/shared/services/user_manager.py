@@ -239,6 +239,38 @@ class UserManager:
             logger.error(f"Error listing users: {e}")
             return []
 
+    def list_users_by_ids(self, user_ids: List[int]) -> List[User]:
+        """Return the subset of users matching the given IDs."""
+        cleaned = [uid for uid in user_ids if isinstance(uid, int)]
+        if not cleaned:
+            return []
+        try:
+            return User.query.filter(User.id.in_(cleaned)).all()
+        except Exception as e:
+            logger.error(f"Error listing users by ids: {e}")
+            return []
+
+    def count_admins(self) -> int:
+        """Return how many admin users currently exist."""
+        try:
+            return User.query.filter_by(is_admin=True).count()
+        except Exception as e:
+            logger.error(f"Error counting admins: {e}")
+            return 0
+
+    def delete_user(self, user_id: int) -> bool:
+        """Delete a user by ID. Returns True on success."""
+        user = self.get_by_id(user_id)
+        if user is None:
+            return False
+        try:
+            self.repository.delete(user)
+            logger.info(f"Deleted user {user.username} (id={user_id})")
+            return True
+        except Exception as e:
+            logger.error(f"Error deleting user {user_id}: {e}")
+            return False
+
     def find_by_username_or_email(self, identifier: str) -> Optional[User]:
         """Look up a user by username or email."""
         try:
