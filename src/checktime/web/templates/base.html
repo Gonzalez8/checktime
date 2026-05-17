@@ -92,9 +92,15 @@
                     </li>
                     {% if current_user.is_admin %}
                     <li class="nav-item">
-                        <a class="nav-link nav-link-modern {% if request.blueprint == 'admin' %}active{% endif %}"
+                        <a class="nav-link nav-link-modern {% if request.endpoint == 'admin.broadcast' %}active{% endif %}"
                            href="{{ url_for('admin.broadcast') }}">
                             <i class="bi bi-megaphone"></i> {{ _('broadcast') }}
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link nav-link-modern {% if request.endpoint and request.endpoint.startswith('admin.') and request.endpoint != 'admin.broadcast' %}active{% endif %}"
+                           href="{{ url_for('admin.users') }}">
+                            <i class="bi bi-people"></i> {{ _('admin_users') }}
                         </a>
                     </li>
                     {% endif %}

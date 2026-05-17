@@ -1,12 +1,36 @@
+import logging
 import os
 from flask import Flask, request, session, redirect, url_for, g, render_template
 from flask_login import LoginManager, current_user
+from sqlalchemy import text
 
 from checktime.shared.db import db, init_db
 from checktime.shared.config import get_secret_key, get_database_url
 from checktime.shared.models.user import User
 from checktime.shared.services.user_manager import UserManager
 from checktime.web.translations import t
+
+logger = logging.getLogger(__name__)
+
+
+def _apply_lightweight_migrations(app):
+    """Add columns that newer code expects but older databases may lack.
+
+    Why: the project relies on db.create_all() which never adds columns to
+    existing tables. Postgres' ADD COLUMN IF NOT EXISTS makes this safe to
+    run on every boot without a real migration tool.
+    """
+    statements = [
+        "ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS password_reset_token_hash VARCHAR(128)",
+        "ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS password_reset_token_expires_at TIMESTAMP",
+    ]
+    with app.app_context():
+        with db.engine.begin() as conn:
+            for stmt in statements:
+                try:
+                    conn.execute(text(stmt))
+                except Exception as exc:  # pragma: no cover - defensive
+                    logger.warning("Skipping migration %r: %s", stmt, exc)
 
 login_manager = LoginManager()
 
@@ -40,6 +64,7 @@ def create_app(test_config=None):
     # Create database tables
     with app.app_context():
         db.create_all()
+    _apply_lightweight_migrations(app)
     
     # Register blueprints
     from checktime.web.routes.auth import auth_bp

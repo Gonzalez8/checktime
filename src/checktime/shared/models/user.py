@@ -2,11 +2,17 @@
 User model for CheckTime.
 """
 
+import hashlib
+import secrets
+from datetime import datetime, timedelta
+
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import UserMixin
 
 from checktime.shared.db import db, TimestampMixin
 from checktime.utils.crypto import encrypt_string, decrypt_string
+
+PASSWORD_RESET_TOKEN_TTL_MINUTES = 30
 
 class User(UserMixin, db.Model, TimestampMixin):
     id = db.Column(db.Integer, primary_key=True)
@@ -14,26 +20,30 @@ class User(UserMixin, db.Model, TimestampMixin):
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(256))
     is_admin = db.Column(db.Boolean, default=False)
-    
+
     # CheckJC credentials
     checkjc_username = db.Column(db.String(120), nullable=True)
     checkjc_password_encrypted = db.Column("checkjc_password", db.String(512), nullable=True)
     checkjc_subdomain = db.Column(db.String(64), nullable=False, default="")
     auto_checkin_enabled = db.Column(db.Boolean, default=True)
-    
+
     # Telegram settings
     telegram_chat_id = db.Column(db.String(50), nullable=True)
     telegram_notifications_enabled = db.Column(db.Boolean, default=True)
-    
+
+    # Password reset
+    password_reset_token_hash = db.Column(db.String(128), nullable=True)
+    password_reset_token_expires_at = db.Column(db.DateTime, nullable=True)
+
     # Relationships
     holidays = db.relationship('Holiday', backref='user', lazy=True, cascade="all, delete-orphan")
     schedule_periods = db.relationship('SchedulePeriod', backref='user', lazy=True, cascade="all, delete-orphan")
-    
+
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
-        
+
     def check_password(self, password):
-        return check_password_hash(self.password_hash, password) 
+        return check_password_hash(self.password_hash, password)
         
     def set_checkjc_password(self, password):
         """Store the CheckJC password encrypted."""
@@ -62,4 +72,33 @@ class User(UserMixin, db.Model, TimestampMixin):
         return (
             self.telegram_chat_id is not None and
             self.telegram_notifications_enabled
-        ) 
+        )
+
+    @staticmethod
+    def _hash_reset_token(raw_token: str) -> str:
+        """Return the SHA-256 hex digest used to store reset tokens."""
+        return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+
+    def generate_password_reset_token(self) -> str:
+        """Generate a single-use reset token, store its hash, and return the raw value."""
+        raw_token = secrets.token_urlsafe(32)
+        self.password_reset_token_hash = self._hash_reset_token(raw_token)
+        self.password_reset_token_expires_at = (
+            datetime.now() + timedelta(minutes=PASSWORD_RESET_TOKEN_TTL_MINUTES)
+        )
+        return raw_token
+
+    def clear_password_reset_token(self) -> None:
+        self.password_reset_token_hash = None
+        self.password_reset_token_expires_at = None
+
+    def password_reset_token_matches(self, raw_token: str) -> bool:
+        """Constant-time check of a reset token against the stored hash and expiry."""
+        if not raw_token or not self.password_reset_token_hash:
+            return False
+        if not self.password_reset_token_expires_at:
+            return False
+        if datetime.now() > self.password_reset_token_expires_at:
+            return False
+        candidate = self._hash_reset_token(raw_token)
+        return secrets.compare_digest(candidate, self.password_reset_token_hash)

@@ -1,23 +1,29 @@
 """
 Admin-only routes.
 
-For now only the Telegram broadcast lives here. Other admin features
-can be added under the same blueprint.
+Includes the Telegram broadcast and basic user management (currently
+limited to issuing one-time password resets for users who cannot
+recover their account via Telegram).
 """
 
 import logging
 from functools import wraps
 
-from flask import Blueprint, flash, redirect, render_template, request, url_for
+from flask import Blueprint, abort, flash, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_required
 
 from checktime.shared.services.user_manager import UserManager
 from checktime.utils.telegram import TelegramClient
+from checktime.web.translations import get_translation
 
 
 logger = logging.getLogger(__name__)
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
+
+
+def _lang():
+    return session.get('language', 'en')
 
 
 def admin_required(view):
@@ -81,3 +87,45 @@ def broadcast():
         flash(f"Enviado a {len(sent)} usuarios.", "success")
 
     return redirect(url_for("admin.broadcast"))
+
+
+@admin_bp.route("/users", methods=["GET"])
+@login_required
+@admin_required
+def users():
+    user_manager = UserManager()
+    return render_template(
+        "admin/users.html",
+        users=user_manager.list_users(),
+        temporary_password=None,
+        target_user=None,
+    )
+
+
+@admin_bp.route("/users/<int:user_id>/reset-password", methods=["POST"])
+@login_required
+@admin_required
+def reset_user_password(user_id):
+    user_manager = UserManager()
+    target = user_manager.get_by_id(user_id)
+    if target is None:
+        abort(404)
+
+    user, temporary_password = user_manager.admin_reset_password(user_id)
+    if user is None or temporary_password is None:
+        flash(get_translation("admin_reset_failed", _lang()), "danger")
+        return redirect(url_for("admin.users"))
+
+    logger.info(
+        "Admin %s issued a temporary password for user %s",
+        current_user.username, user.username,
+    )
+
+    # Render the same page so the temp password is shown inline once;
+    # we deliberately avoid `flash` so it isn't persisted in the session.
+    return render_template(
+        "admin/users.html",
+        users=user_manager.list_users(),
+        temporary_password=temporary_password,
+        target_user=user,
+    )

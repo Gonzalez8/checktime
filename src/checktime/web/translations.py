@@ -321,6 +321,35 @@ EN = {
     'broadcast_markdown_hint': 'You can use *bold*, _italic_ and `code`. The message will be prefixed with "📢 Aviso del administrador".',
     'broadcast_send': 'Send broadcast',
     'broadcast_confirm': 'Send this message to ALL Telegram users?',
+
+    # Password recovery
+    'forgot_password': 'Forgot your password?',
+    'forgot_password_intro': 'Enter your username or email and we will send you a reset link via Telegram.',
+    'forgot_password_telegram_only': 'Reset links are delivered via Telegram. If you have not configured a Telegram chat, ask an administrator to reset your password.',
+    'username_or_email': 'Username or email',
+    'enter_username_or_email': 'Enter your username or email',
+    'send_reset_link': 'Send reset link',
+    'back_to_login': 'Back to login',
+    'reset_request_received': 'If the account exists and has Telegram configured, a reset link has been sent. Check your Telegram chat.',
+    'reset_password': 'Reset password',
+    'reset_password_for_user': 'Set a new password for',
+    'reset_token_invalid': 'This reset link is invalid or has expired. Please request a new one.',
+    'reset_password_success': 'Password updated successfully. You can now sign in.',
+    'reset_telegram_intro': 'You requested a password reset for your CheckTime account.',
+    'reset_telegram_link': 'Reset your password',
+    'reset_telegram_expiry': 'This link is valid for 30 minutes. If you did not request it, you can ignore this message.',
+
+    # Admin user management
+    'admin_users': 'Users',
+    'admin_users_intro': 'Manage CheckTime accounts. Use the reset button to hand a temporary password to a user who cannot recover their account via Telegram.',
+    'admin_users_empty': 'There are no users yet.',
+    'admin_reset_button': 'Reset password',
+    'admin_reset_confirm': 'Generate a new temporary password for',
+    'admin_reset_success_title': 'Temporary password generated',
+    'admin_reset_success_intro': 'New one-time password for',
+    'admin_reset_success_warning': 'Copy it now and share it through a secure channel. It will not be shown again — refreshing this page will hide it. Ask the user to change it from their profile after logging in.',
+    'admin_reset_failed': 'Could not reset the password. Please try again.',
+    'is_admin': 'Admin',
 }
 
 # Spanish translations
@@ -640,6 +669,35 @@ ES = {
     'broadcast_markdown_hint': 'Puedes usar *negrita*, _cursiva_ y `código`. El mensaje se enviará con el prefijo "📢 Aviso del administrador".',
     'broadcast_send': 'Enviar comunicación',
     'broadcast_confirm': '¿Enviar este mensaje a TODOS los usuarios de Telegram?',
+
+    # Password recovery
+    'forgot_password': '¿Olvidaste tu contraseña?',
+    'forgot_password_intro': 'Introduce tu usuario o correo y te enviaremos un enlace de recuperación por Telegram.',
+    'forgot_password_telegram_only': 'Los enlaces de recuperación se envían por Telegram. Si no tienes un chat configurado, pide a un administrador que restablezca tu contraseña.',
+    'username_or_email': 'Usuario o correo',
+    'enter_username_or_email': 'Introduce tu usuario o correo',
+    'send_reset_link': 'Enviar enlace',
+    'back_to_login': 'Volver al inicio de sesión',
+    'reset_request_received': 'Si la cuenta existe y tiene Telegram configurado, hemos enviado un enlace de recuperación. Revisa tu chat de Telegram.',
+    'reset_password': 'Restablecer contraseña',
+    'reset_password_for_user': 'Establece una nueva contraseña para',
+    'reset_token_invalid': 'Este enlace de recuperación no es válido o ha caducado. Solicita uno nuevo.',
+    'reset_password_success': 'Contraseña actualizada. Ya puedes iniciar sesión.',
+    'reset_telegram_intro': 'Has solicitado restablecer la contraseña de tu cuenta de CheckTime.',
+    'reset_telegram_link': 'Restablecer mi contraseña',
+    'reset_telegram_expiry': 'Este enlace caduca en 30 minutos. Si no fuiste tú quien lo solicitó, puedes ignorar este mensaje.',
+
+    # Admin user management
+    'admin_users': 'Usuarios',
+    'admin_users_intro': 'Gestiona las cuentas de CheckTime. Usa el botón de restablecer para entregar una contraseña temporal a un usuario que no pueda recuperar su cuenta por Telegram.',
+    'admin_users_empty': 'Aún no hay usuarios.',
+    'admin_reset_button': 'Restablecer contraseña',
+    'admin_reset_confirm': '¿Generar una nueva contraseña temporal para',
+    'admin_reset_success_title': 'Contraseña temporal generada',
+    'admin_reset_success_intro': 'Nueva contraseña de un solo uso para',
+    'admin_reset_success_warning': 'Cópiala ahora y compártela por un canal seguro. No se volverá a mostrar — si recargas la página desaparecerá. Pide al usuario que la cambie desde su perfil tras iniciar sesión.',
+    'admin_reset_failed': 'No se pudo restablecer la contraseña. Inténtalo de nuevo.',
+    'is_admin': 'Admin',
 }
 
 # Dictionary containing all translations

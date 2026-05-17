@@ -1,11 +1,16 @@
+import logging
+
 from flask import Blueprint, render_template, redirect, url_for, flash, request, session
 from flask_login import login_user, logout_user, login_required, current_user
 from flask_wtf import FlaskForm
 from wtforms import StringField, PasswordField, BooleanField, SubmitField
-from wtforms.validators import DataRequired, Email, EqualTo, ValidationError, Optional
+from wtforms.validators import DataRequired, Email, EqualTo, ValidationError, Optional, Length
 
 from checktime.shared.services.user_manager import UserManager
+from checktime.utils.telegram import TelegramClient
 from checktime.web.translations import get_translation
+
+logger = logging.getLogger(__name__)
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
 
@@ -89,6 +94,15 @@ class TelegramSettingsForm(FlaskForm):
     telegram_notifications_enabled = BooleanField('Enable Telegram Notifications', default=True)
     submit = SubmitField('Save Telegram Settings')
 
+class ForgotPasswordForm(FlaskForm):
+    identifier = StringField('Username or Email', validators=[DataRequired()])
+    submit = SubmitField('Send reset link')
+
+class ResetPasswordForm(FlaskForm):
+    password = PasswordField('New Password', validators=[DataRequired(), Length(min=8)])
+    password2 = PasswordField('Repeat New Password', validators=[DataRequired(), EqualTo('password')])
+    submit = SubmitField('Reset password')
+
 @auth_bp.route('/login', methods=['GET', 'POST'])
 def login():
     if current_user.is_authenticated:
@@ -109,6 +123,78 @@ def login():
         return redirect(next_page)
     
     return render_template('auth/login.html', title='Sign In', form=form)
+
+@auth_bp.route('/forgot-password', methods=['GET', 'POST'])
+def forgot_password():
+    if current_user.is_authenticated:
+        return redirect(url_for('dashboard.index'))
+
+    form = ForgotPasswordForm()
+    lang = get_language()
+    if form.validate_on_submit():
+        user_manager = UserManager()
+        user, raw_token = user_manager.create_password_reset_token(form.identifier.data)
+
+        delivered_via_telegram = False
+        if user and raw_token and user.telegram_chat_id:
+            reset_url = url_for('auth.reset_password', token=raw_token, _external=True)
+            message = (
+                f"🔐 *CheckTime*\n\n"
+                f"{get_translation('reset_telegram_intro', lang)}\n\n"
+                f"[{get_translation('reset_telegram_link', lang)}]({reset_url})\n\n"
+                f"_{get_translation('reset_telegram_expiry', lang)}_"
+            )
+            try:
+                delivered_via_telegram = TelegramClient().send_message(
+                    message,
+                    chat_id=user.telegram_chat_id,
+                    parse_mode="Markdown",
+                )
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.error("Error sending password reset Telegram message: %s", exc)
+                delivered_via_telegram = False
+
+        if user and not delivered_via_telegram:
+            logger.info(
+                "Password reset requested for user %s but Telegram delivery was not possible",
+                user.username,
+            )
+
+        # Always show the same response to avoid leaking which accounts exist
+        # or which ones have Telegram configured.
+        flash(get_translation('reset_request_received', lang), 'info')
+        return redirect(url_for('auth.login'))
+
+    return render_template('auth/forgot_password.html',
+                           title=get_translation('forgot_password', lang),
+                           form=form)
+
+
+@auth_bp.route('/reset-password/<token>', methods=['GET', 'POST'])
+def reset_password(token):
+    if current_user.is_authenticated:
+        return redirect(url_for('dashboard.index'))
+
+    lang = get_language()
+    user_manager = UserManager()
+    user = user_manager.verify_password_reset_token(token)
+    if user is None:
+        flash(get_translation('reset_token_invalid', lang), 'danger')
+        return redirect(url_for('auth.forgot_password'))
+
+    form = ResetPasswordForm()
+    if form.validate_on_submit():
+        updated = user_manager.reset_password_with_token(token, form.password.data)
+        if updated is None:
+            flash(get_translation('reset_token_invalid', lang), 'danger')
+            return redirect(url_for('auth.forgot_password'))
+        flash(get_translation('reset_password_success', lang), 'success')
+        return redirect(url_for('auth.login'))
+
+    return render_template('auth/reset_password.html',
+                           title=get_translation('reset_password', lang),
+                           form=form, username=user.username)
+
 
 @auth_bp.route('/logout')
 def logout():
