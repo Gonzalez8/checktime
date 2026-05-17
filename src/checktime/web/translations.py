@@ -321,6 +321,10 @@ EN = {
     'broadcast_markdown_hint': 'You can use *bold*, _italic_ and `code`. The message will be prefixed with "📢 Aviso del administrador".',
     'broadcast_send': 'Send broadcast',
     'broadcast_confirm': 'Send this message to ALL Telegram users?',
+    'broadcast_recipients_label': 'Recipients',
+    'broadcast_select_all': 'Select all',
+    'broadcast_confirm_all': 'Send this message to ALL Telegram users?',
+    'broadcast_confirm_some': 'Send this message to {count} selected user(s)?',
 
     # Password recovery
     'forgot_password': 'Forgot your password?',
@@ -349,6 +353,12 @@ EN = {
     'admin_reset_success_intro': 'New one-time password for',
     'admin_reset_success_warning': 'Copy it now and share it through a secure channel. It will not be shown again — refreshing this page will hide it. Ask the user to change it from their profile after logging in.',
     'admin_reset_failed': 'Could not reset the password. Please try again.',
+    'admin_delete_button': 'Delete',
+    'admin_delete_confirm': 'Permanently delete user',
+    'admin_delete_success': 'User {username} deleted.',
+    'admin_delete_failed': 'Could not delete the user. Please try again.',
+    'admin_delete_self_blocked': 'You cannot delete your own account.',
+    'admin_delete_last_admin_blocked': 'You cannot delete the last admin user.',
     'is_admin': 'Admin',
 }
 
@@ -669,6 +679,10 @@ ES = {
     'broadcast_markdown_hint': 'Puedes usar *negrita*, _cursiva_ y `código`. El mensaje se enviará con el prefijo "📢 Aviso del administrador".',
     'broadcast_send': 'Enviar comunicación',
     'broadcast_confirm': '¿Enviar este mensaje a TODOS los usuarios de Telegram?',
+    'broadcast_recipients_label': 'Destinatarios',
+    'broadcast_select_all': 'Seleccionar todos',
+    'broadcast_confirm_all': '¿Enviar este mensaje a TODOS los usuarios de Telegram?',
+    'broadcast_confirm_some': '¿Enviar este mensaje a {count} usuario(s) seleccionado(s)?',
 
     # Password recovery
     'forgot_password': '¿Olvidaste tu contraseña?',
@@ -697,6 +711,12 @@ ES = {
     'admin_reset_success_intro': 'Nueva contraseña de un solo uso para',
     'admin_reset_success_warning': 'Cópiala ahora y compártela por un canal seguro. No se volverá a mostrar — si recargas la página desaparecerá. Pide al usuario que la cambie desde su perfil tras iniciar sesión.',
     'admin_reset_failed': 'No se pudo restablecer la contraseña. Inténtalo de nuevo.',
+    'admin_delete_button': 'Eliminar',
+    'admin_delete_confirm': '¿Eliminar permanentemente al usuario',
+    'admin_delete_success': 'Usuario {username} eliminado.',
+    'admin_delete_failed': 'No se pudo eliminar el usuario. Inténtalo de nuevo.',
+    'admin_delete_self_blocked': 'No puedes eliminar tu propia cuenta.',
+    'admin_delete_last_admin_blocked': 'No puedes eliminar al último administrador.',
     'is_admin': 'Admin',
 }
 
