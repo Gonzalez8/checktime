@@ -2,8 +2,10 @@
 User management service for CheckTime application.
 """
 
+import hashlib
 import logging
-from typing import List, Optional, Any
+import secrets
+from typing import List, Optional, Tuple
 
 from checktime.shared.repository.user_repository import UserRepository
 from checktime.shared.models.user import User
@@ -229,6 +231,90 @@ class UserManager:
             logger.error(error_msg)
             return None
     
+    def list_users(self) -> List[User]:
+        """Return all users ordered by username."""
+        try:
+            return self.repository.get_all()
+        except Exception as e:
+            logger.error(f"Error listing users: {e}")
+            return []
+
+    def find_by_username_or_email(self, identifier: str) -> Optional[User]:
+        """Look up a user by username or email."""
+        try:
+            return self.repository.get_by_username_or_email(identifier)
+        except Exception as e:
+            logger.error(f"Error finding user by identifier: {e}")
+            return None
+
+    def create_password_reset_token(self, identifier: str) -> Tuple[Optional[User], Optional[str]]:
+        """Generate a reset token for the user matching identifier.
+
+        Returns (user, raw_token) on success or (None, None) if no user matches.
+        Callers must NOT leak the difference between "not found" and "found" to
+        the requester — that's handled in the view.
+        """
+        user = self.find_by_username_or_email(identifier)
+        if user is None:
+            return None, None
+        try:
+            raw_token = user.generate_password_reset_token()
+            self.repository.update(user)
+            logger.info(f"Issued password reset token for user {user.username}")
+            return user, raw_token
+        except Exception as e:
+            logger.error(f"Error generating reset token: {e}")
+            return None, None
+
+    def verify_password_reset_token(self, raw_token: str) -> Optional[User]:
+        """Return the user a non-expired token belongs to, or None."""
+        if not raw_token:
+            return None
+        try:
+            token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+            user = self.repository.find_by_reset_token_hash(token_hash)
+            if user and user.password_reset_token_matches(raw_token):
+                return user
+            return None
+        except Exception as e:
+            logger.error(f"Error verifying reset token: {e}")
+            return None
+
+    def reset_password_with_token(self, raw_token: str, new_password: str) -> Optional[User]:
+        """Consume a valid token and set a new password. Returns the user or None."""
+        user = self.verify_password_reset_token(raw_token)
+        if user is None:
+            return None
+        try:
+            user.set_password(new_password)
+            user.clear_password_reset_token()
+            self.repository.update(user)
+            logger.info(f"Password reset completed for user {user.username}")
+            return user
+        except Exception as e:
+            logger.error(f"Error resetting password: {e}")
+            return None
+
+    def admin_reset_password(self, user_id: int) -> Tuple[Optional[User], Optional[str]]:
+        """Set a fresh random password for the given user and return it once.
+
+        Used by admins to hand a one-time password to a user out-of-band.
+        Returns (user, temporary_password) or (None, None).
+        """
+        user = self.get_by_id(user_id)
+        if user is None:
+            return None, None
+        try:
+            temporary_password = secrets.token_urlsafe(12)
+            user.set_password(temporary_password)
+            user.clear_password_reset_token()
+            self.repository.update(user)
+            logger.info(f"Admin-issued temporary password for user {user.username}")
+            return user, temporary_password
+        except Exception as e:
+            logger.error(f"Error issuing admin temporary password: {e}")
+            return None, None
+
     def set_telegram_settings(self, user_id: int, chat_id: str, enabled: bool = True) -> Optional[User]:
         """
         Set the Telegram settings for a user.

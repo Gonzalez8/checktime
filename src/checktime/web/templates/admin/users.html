@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block title %}{{ _('admin_users') }} - {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h2><i class="bi bi-people"></i> {{ _('admin_users') }}</h2>
+        <p class="text-muted">{{ _('admin_users_intro') }}</p>
+    </div>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        {% for category, message in messages %}
+            <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+{% endwith %}
+
+{% if temporary_password and target_user %}
+<div class="alert alert-success">
+    <h5 class="mb-2"><i class="bi bi-shield-check"></i> {{ _('admin_reset_success_title') }}</h5>
+    <p class="mb-2">
+        {{ _('admin_reset_success_intro') }}
+        <strong>{{ target_user.username }}</strong>
+        ({{ target_user.email }}):
+    </p>
+    <code class="d-inline-block fs-5 px-3 py-2 bg-light text-dark border rounded user-select-all">{{ temporary_password }}</code>
+    <p class="mt-3 mb-0 text-muted small">
+        <i class="bi bi-exclamation-triangle"></i>
+        {{ _('admin_reset_success_warning') }}
+    </p>
+</div>
+{% endif %}
+
+<div class="card shadow">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>{{ _('username') }}</th>
+                        <th>{{ _('email') }}</th>
+                        <th>{{ _('telegram_chat_id') }}</th>
+                        <th class="text-center">{{ _('is_admin') if _('is_admin') != 'is_admin' else 'Admin' }}</th>
+                        <th class="text-end">{{ _('actions') }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user in users %}
+                    <tr>
+                        <td>{{ user.username }}</td>
+                        <td>{{ user.email }}</td>
+                        <td>
+                            {% if user.telegram_chat_id %}
+                                <span class="badge bg-info"><i class="bi bi-telegram"></i> {{ user.telegram_chat_id }}</span>
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            {% if user.is_admin %}
+                                <i class="bi bi-check-circle-fill text-success"></i>
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end">
+                            <form method="POST"
+                                  action="{{ url_for('admin.reset_user_password', user_id=user.id) }}"
+                                  class="d-inline"
+                                  onsubmit="return confirm('{{ _('admin_reset_confirm') }} {{ user.username }}?');">
+                                <button type="submit" class="btn btn-sm btn-outline-warning">
+                                    <i class="bi bi-key"></i> {{ _('admin_reset_button') }}
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="5" class="text-center text-muted py-4">{{ _('admin_users_empty') }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -93,6 +93,26 @@ class UserRepository(BaseRepository[User]):
             User.telegram_notifications_enabled == True
         ).all()
         
+    def get_all(self) -> List[User]:
+        """Return all users ordered by username."""
+        return User.query.order_by(User.username.asc()).all()
+
+    def get_by_username_or_email(self, identifier: str) -> Optional[User]:
+        """Look up a user by username OR email (case-insensitive on email)."""
+        identifier = (identifier or "").strip()
+        if not identifier:
+            return None
+        by_username = self.get_by_username(identifier)
+        if by_username:
+            return by_username
+        return User.query.filter(User.email.ilike(identifier)).first()
+
+    def find_by_reset_token_hash(self, token_hash: str) -> Optional[User]:
+        """Look up a user by the stored hash of their reset token."""
+        if not token_hash:
+            return None
+        return User.query.filter_by(password_reset_token_hash=token_hash).first()
+
     def set_telegram_settings(self, user_id: int, chat_id: str, enabled: bool = True) -> User:
         """
         Set the Telegram settings for a user.
