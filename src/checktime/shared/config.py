@@ -95,6 +95,21 @@ def get_user_check_stagger_seconds() -> int:
     """
     return int(get_config('USER_CHECK_STAGGER_SECONDS', '60'))
 
+def get_checkjc_lite_retries() -> int:
+    """Extra attempts to retry login when CheckJC serves the 'lite' variant.
+
+    The lite variant is the stripped HTML CheckJC returns when its
+    anti-bot fires: ~7-10 KB instead of ~70 KB, with form inputs in
+    markup but 0x0 box model. Reload+wait sometimes recovers a real
+    page from the same egress IP. The default of 2 means up to 3 total
+    attempts before giving up.
+    """
+    return int(get_config('CHECKJC_LITE_RETRIES', '2'))
+
+def get_checkjc_lite_retry_seconds() -> int:
+    """Seconds to wait between lite-variant retries."""
+    return int(get_config('CHECKJC_LITE_RETRY_SECONDS', '60'))
+
 # Logging configuration
 def get_log_level() -> str:
     """Get the logging level"""

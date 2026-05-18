@@ -1,7 +1,8 @@
 # Migración a CheckJC v7.4 (mayo 2026)
 
-> Releases involucradas: v1.5.0 a v1.5.4 (CheckJC v7.4 inicial) y v1.7.2
-> (anti-bot por IP, ver "Anti-bot por IP" al final).
+> Releases involucradas: v1.5.0 a v1.5.4 (CheckJC v7.4 inicial), v1.7.2
+> (stagger entre usuarios) y v1.7.3 (retry on lite variant). Ver
+> "Anti-bot por IP" al final para el detalle.
 
 ## TL;DR
 
@@ -247,3 +248,44 @@ variable a 90/120 sin redeploy de código. Si CheckJC endureciera el
 anti-bot al punto de no servir login real ni con stagger, habría que
 mirar rotar el exit IP de NordVPN entre usuarios (más complejo, fuera
 del scope actual).
+
+## Lite variant para logins aislados (mayo 2026, v1.7.3)
+
+Tras v1.7.2 vimos que la variante lite también dispara para **logins
+aislados** (un único usuario en su lote). Caso real: 2026-05-18 18:12,
+Jose es el único usuario con checkout a esa hora, no hay segundo
+login en la misma IP, y aun así el body llega como 7 778 bytes con
+los 18 elementos del form en markup pero todos 0×0.
+
+Esto confirma que el anti-bot de CheckJC también dispara por:
+
+- Fingerprinting del navegador (headless Chromium detectable).
+- Marcado temporal por cuenta tras un fallo previo (la misma cuenta
+  falló por la mañana en el lote, y CheckJC parece marcarla unas
+  horas).
+- Sampling aleatorio para identificar bots por comportamiento.
+
+Mitigación adicional (`CheckJCClient.login`): cuando el body es
+**menor de 20 KB**, asumimos que es la variante lite y **reintentamos
+el `goto` completo** tras una espera configurable. La diferencia con
+el stagger es que el stagger separa usuarios entre sí; el retry
+recupera el caso de **un único usuario que ha tenido mala suerte con
+el anti-bot**.
+
+Variables de entorno:
+
+| Variable | Default | Descripción |
+|---|---|---|
+| `CHECKJC_LITE_RETRIES` | `2` | Reintentos extra cuando llega lite (3 intentos totales) |
+| `CHECKJC_LITE_RETRY_SECONDS` | `60` | Segundos entre reintentos |
+
+Con los defaults, un login en variante lite intenta hasta 3 veces
+con 60 s entre ellas — añade un máximo de 2 minutos al peor caso,
+pero suele recuperarse antes. Si tras los reintentos sigue lite, se
+lanza `CheckJCFormError` indicando que el anti-bot está duro en
+esta IP y sugiere rotar exit NordVPN o subir el delay.
+
+Decisión: **no se reintenta** si el body llega con tamaño normal pero
+los elementos son invisibles — en ese caso es un cambio de DOM real y
+no se arregla esperando. Solo el caso "body pequeño = lite variant"
+dispara el retry.
