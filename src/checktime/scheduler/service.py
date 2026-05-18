@@ -19,7 +19,7 @@ from checktime.scheduler.checker import (
     CheckJCFormError,
     CheckJCUnexpectedResponse,
 )
-from checktime.shared.config import get_log_level
+from checktime.shared.config import get_log_level, get_user_check_stagger_seconds
 from checktime.utils.telegram import TelegramClient
 from checktime.shared.services.holiday_manager import HolidayManager
 from checktime.shared.services.user_manager import UserManager
@@ -207,7 +207,16 @@ def get_users_to_check_now():
 def schedule_check():
     """Check if it's time to perform check-in/out based on schedules for all users, and do it sequentially."""
     users_to_check = get_users_to_check_now()
-    for user, check_type in users_to_check:
+    # CheckJC anti-bot serves a stripped 'lite' page when several logins
+    # arrive from the same egress IP within seconds. Space users out.
+    stagger_seconds = get_user_check_stagger_seconds()
+    for index, (user, check_type) in enumerate(users_to_check):
+        if index > 0 and stagger_seconds > 0:
+            logger.info(
+                "Sleeping %ds before next user to avoid CheckJC anti-bot",
+                stagger_seconds,
+            )
+            time.sleep(stagger_seconds)
         perform_check_for_user(user, check_type)
 
 def perform_check_in():

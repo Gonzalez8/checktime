@@ -85,6 +85,16 @@ def get_selenium_timeout() -> int:
     """Get the Selenium timeout in seconds"""
     return int(get_config('SELENIUM_TIMEOUT', '30'))
 
+# Scheduler configuration
+def get_user_check_stagger_seconds() -> int:
+    """Seconds to wait between consecutive users in the same scheduler batch.
+
+    CheckJC's anti-bot rejects rapid sequential logins from the same egress
+    IP (it serves a stripped 'lite' HTML variant where Stencil never
+    hydrates). Spacing logins out avoids that penalty.
+    """
+    return int(get_config('USER_CHECK_STAGGER_SECONDS', '60'))
+
 # Logging configuration
 def get_log_level() -> str:
     """Get the logging level"""

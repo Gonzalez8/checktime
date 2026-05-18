@@ -1,6 +1,7 @@
 # Migración a CheckJC v7.4 (mayo 2026)
 
-> Releases involucradas: v1.5.0 a v1.5.4 (v1.5.4 es la estable en producción).
+> Releases involucradas: v1.5.0 a v1.5.4 (CheckJC v7.4 inicial) y v1.7.2
+> (anti-bot por IP, ver "Anti-bot por IP" al final).
 
 ## TL;DR
 
@@ -214,3 +215,35 @@ flujo:
   Chromium.
 
 Todos toman tres argumentos posicionales: `USER PASSWORD SUBDOMAIN`.
+
+## Anti-bot por IP (mayo 2026, v1.7.2)
+
+Una vez resuelto el cambio de DOM de v7.4, apareció un fallo distinto:
+el primer usuario del lote ficha bien, los siguientes en pocos segundos
+desde la misma IP de gluetun reciben una **variante "lite"** del HTML
+de `/login`. Síntomas:
+
+- Cuenta normal del HTML real (~70 KB) → llega ~8 KB.
+- Los selectores `.form_username`, `.form_password`, `#btn-login` sí
+  aparecen (~17–20 copias, igual que en el HTML normal).
+- Pero `DOM.getBoxModel` de cada uno devuelve 0×0: Stencil nunca
+  hidrata el componente porque la página no trae el JS necesario.
+- La captura `checkjc_failed_login_<user>.png` muestra una página en
+  blanco con sólo el footer "Powered by CheckJC v7.4" y el nombre de
+  la empresa.
+
+Esto **no** es bloqueo de IP duro (no aparece el banner de minutos),
+no es cambio de DOM (los selectores casan), y no es per-usuario (el
+mismo usuario funciona si va primero en la cola).
+
+Mitigación (`schedule_check` en `scheduler/service.py`): se introduce
+un **stagger configurable entre usuarios del mismo lote**. Variable
+de entorno `USER_CHECK_STAGGER_SECONDS`, por defecto `60`. Con 4
+usuarios coincidiendo a las 09:00 el último ficha a las 09:03, lo
+cual sigue dentro de hora laboral.
+
+Si en algún despliegue futuro 60 s no fueran suficientes, se sube la
+variable a 90/120 sin redeploy de código. Si CheckJC endureciera el
+anti-bot al punto de no servir login real ni con stagger, habría que
+mirar rotar el exit IP de NordVPN entre usuarios (más complejo, fuera
+del scope actual).
