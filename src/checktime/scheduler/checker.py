@@ -133,7 +133,7 @@ class CheckJCClient:
         retry_wait_ms = get_checkjc_lite_retry_seconds() * 1000
 
         user_node = pass_node = btn_node = None
-        last_lite_body_size = None
+        last_body_size = None
         for attempt in range(1, max_attempts + 1):
             logger.info(
                 f"Navigating to {self.login_url} (attempt {attempt}/{max_attempts})"
@@ -144,6 +144,7 @@ class CheckJCClient:
 
             body_text = self._page.content()
             body_size = len(body_text or "")
+            last_body_size = body_size
 
             # Banner de IP bloqueada — esto no se arregla reintentando.
             mins = self._ip_block_minutes(body_text)
@@ -153,53 +154,42 @@ class CheckJCClient:
                     f"Retry available in {mins} minutes (per server)."
                 )
 
-            # Variante lite: HTML muy pequeño, Stencil no hidratará. Volver
-            # a intentar suele recuperar la versión real desde la misma IP.
-            if body_size < _LITE_BODY_THRESHOLD:
-                last_lite_body_size = body_size
-                logger.warning(
-                    "CheckJC served lite variant for %s (body=%d bytes, "
-                    "attempt %d/%d)",
-                    self.username, body_size, attempt, max_attempts,
-                )
-                if attempt < max_attempts:
-                    logger.info(
-                        "Sleeping %ds before retrying login for %s",
-                        retry_wait_ms // 1000, self.username,
-                    )
-                    self._page.wait_for_timeout(retry_wait_ms)
-                    continue
-                # Sin más reintentos: dejamos que _find_login_elements lance
-                # CheckJCFormError con todos los diagnósticos (counts, body
-                # size, captura). Cae a la rama de abajo.
-
+            # Intentamos siempre encontrar el form, sin importar el tamaño:
+            # hemos visto bodys de 7-8 KB donde Stencil sí estaba hidratado
+            # (caché JS de intentos previos en el mismo Context).
             try:
                 user_node, pass_node, btn_node = self._find_login_elements()
+                if body_size < _LITE_BODY_THRESHOLD:
+                    logger.info(
+                        "Form usable despite small body (%d bytes) for %s "
+                        "— probably hydrated from cache",
+                        body_size, self.username,
+                    )
                 break
             except CheckJCFormError:
-                # Si el body era pequeño esto ya iba a fallar; reintentamos
-                # arriba. Si el body era normal pero los elementos invisibles,
-                # es un cambio de DOM real — propagar.
+                # Body pequeño + form no encontrado = anti-bot lite real.
+                # Retry; el goto siguiente reutiliza el mismo Context, así
+                # que caché y cookies persisten.
                 if body_size < _LITE_BODY_THRESHOLD and attempt < max_attempts:
-                    last_lite_body_size = body_size
-                    logger.info(
-                        "Lite variant on attempt %d/%d for %s, retrying in %ds",
-                        attempt, max_attempts, self.username, retry_wait_ms // 1000,
+                    logger.warning(
+                        "Lite variant for %s (body=%d bytes, attempt %d/%d); "
+                        "sleeping %ds before retry",
+                        self.username, body_size, attempt, max_attempts,
+                        retry_wait_ms // 1000,
                     )
                     self._page.wait_for_timeout(retry_wait_ms)
                     continue
+                # Body normal pero form no encontrado: cambio de DOM real,
+                # no se arregla esperando. Propagar tal cual.
                 raise
 
         if user_node is None or pass_node is None or btn_node is None:
-            # Solo llegamos aquí si agotamos reintentos en variante lite sin
-            # que _find_login_elements llegara a lanzar (poco probable, pero
-            # cubrimos el caso para no seguir con nodos None).
+            # Defensive: salimos del bucle sin éxito ni excepción.
             raise CheckJCFormError(
-                f"CheckJC kept serving the lite variant for {self.username} "
-                f"after {max_attempts} attempts (last body size: "
-                f"{last_lite_body_size} bytes). Anti-bot is hard-locked from "
-                f"this egress IP; consider rotating the NordVPN exit or "
-                f"raising CHECKJC_LITE_RETRY_SECONDS."
+                f"Login attempts exhausted for {self.username} "
+                f"(last body size: {last_body_size} bytes). "
+                f"Consider rotating the NordVPN exit IP or raising "
+                f"CHECKJC_LITE_RETRY_SECONDS."
             )
 
         logger.info(

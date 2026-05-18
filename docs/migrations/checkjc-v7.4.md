@@ -1,8 +1,8 @@
 # Migración a CheckJC v7.4 (mayo 2026)
 
 > Releases involucradas: v1.5.0 a v1.5.4 (CheckJC v7.4 inicial), v1.7.2
-> (stagger entre usuarios) y v1.7.3 (retry on lite variant). Ver
-> "Anti-bot por IP" al final para el detalle.
+> (stagger entre usuarios), v1.7.3 (retry on lite variant) y v1.7.4
+> (try-form-first). Ver "Anti-bot por IP" al final para el detalle.
 
 ## TL;DR
 
@@ -289,3 +289,31 @@ Decisión: **no se reintenta** si el body llega con tamaño normal pero
 los elementos son invisibles — en ese caso es un cambio de DOM real y
 no se arregla esperando. Solo el caso "body pequeño = lite variant"
 dispara el retry.
+
+### Refinamiento en v1.7.4
+
+La primera versión del retry (v1.7.3) usaba el tamaño del body como
+predicción dura: si `body < 20 KB`, asumía variante lite garantizada
+y se saltaba directo al sleep. En producción vimos un caso (Jose,
+2026-05-18 18:47–18:51) en el que el intento 3 funcionó con body de
+7 608 bytes — exactamente del mismo tamaño que los dos intentos
+previos que se saltaron sin probar.
+
+Hipótesis: dentro del mismo `BrowserContext` los reintentos comparten
+caché y cookies. Aunque CheckJC sirva el mismo HTML stub, los assets
+JS de Stencil ya están cacheados de intentos previos y pueden hidratar
+los componentes. El body es pequeño porque solo cambia el HTML; el
+componente Stencil viene del bundle JS cacheado en el navegador.
+
+Cambio de comportamiento en v1.7.4:
+
+1. Siempre se llama a `_find_login_elements` tras el `goto`, sin
+   importar el tamaño del body.
+2. Solo se reintenta si `_find_login_elements` **falla efectivamente**
+   y el body era `< 20 KB` (lite real).
+3. Si `_find_login_elements` falla con body normal, se propaga
+   inmediatamente (cambio de DOM real).
+
+Resultado: en el caso de Jose del 18:47 habría fichado en el primer
+intento en vez de esperar 4 minutos. Sin coste para los demás
+escenarios.
