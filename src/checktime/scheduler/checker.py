@@ -2,7 +2,17 @@ import logging
 import re
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 
-from checktime.shared.config import get_selenium_timeout, get_simulation_mode
+from checktime.shared.config import (
+    get_checkjc_lite_retries,
+    get_checkjc_lite_retry_seconds,
+    get_selenium_timeout,
+    get_simulation_mode,
+)
+
+# Body sizes below this are treated as the CheckJC "lite" anti-bot variant.
+# Normal /login renders ~70 KB; lite is consistently <10 KB (we've seen
+# ~7.7-8 KB in production). 20 KB is a safe threshold.
+_LITE_BODY_THRESHOLD = 20000
 
 SIMULATION_MODE = get_simulation_mode()
 
@@ -119,22 +129,79 @@ class CheckJCClient:
             logger.info(f"Simulation: Login successful for {self.username}")
             return True
 
-        logger.info(f"Navigating to {self.login_url}")
-        self._page.goto(self.login_url, wait_until="networkidle")
-        # Hidratación de Stencil + render del template shadow DOM closed.
-        self._page.wait_for_timeout(2000)
+        max_attempts = get_checkjc_lite_retries() + 1
+        retry_wait_ms = get_checkjc_lite_retry_seconds() * 1000
 
-        # Detección temprana de IP bloqueada (banner en /etc/login)
-        body_text = self._page.content()
-        mins = self._ip_block_minutes(body_text)
-        if mins is not None:
-            raise CheckJCIPBlocked(
-                f"CheckJC blocked this IP for {self.username}. "
-                f"Retry available in {mins} minutes (per server)."
+        user_node = pass_node = btn_node = None
+        last_lite_body_size = None
+        for attempt in range(1, max_attempts + 1):
+            logger.info(
+                f"Navigating to {self.login_url} (attempt {attempt}/{max_attempts})"
+            )
+            self._page.goto(self.login_url, wait_until="networkidle")
+            # Hidratación de Stencil + render del template shadow DOM closed.
+            self._page.wait_for_timeout(2000)
+
+            body_text = self._page.content()
+            body_size = len(body_text or "")
+
+            # Banner de IP bloqueada — esto no se arregla reintentando.
+            mins = self._ip_block_minutes(body_text)
+            if mins is not None:
+                raise CheckJCIPBlocked(
+                    f"CheckJC blocked this IP for {self.username}. "
+                    f"Retry available in {mins} minutes (per server)."
+                )
+
+            # Variante lite: HTML muy pequeño, Stencil no hidratará. Volver
+            # a intentar suele recuperar la versión real desde la misma IP.
+            if body_size < _LITE_BODY_THRESHOLD:
+                last_lite_body_size = body_size
+                logger.warning(
+                    "CheckJC served lite variant for %s (body=%d bytes, "
+                    "attempt %d/%d)",
+                    self.username, body_size, attempt, max_attempts,
+                )
+                if attempt < max_attempts:
+                    logger.info(
+                        "Sleeping %ds before retrying login for %s",
+                        retry_wait_ms // 1000, self.username,
+                    )
+                    self._page.wait_for_timeout(retry_wait_ms)
+                    continue
+                # Sin más reintentos: dejamos que _find_login_elements lance
+                # CheckJCFormError con todos los diagnósticos (counts, body
+                # size, captura). Cae a la rama de abajo.
+
+            try:
+                user_node, pass_node, btn_node = self._find_login_elements()
+                break
+            except CheckJCFormError:
+                # Si el body era pequeño esto ya iba a fallar; reintentamos
+                # arriba. Si el body era normal pero los elementos invisibles,
+                # es un cambio de DOM real — propagar.
+                if body_size < _LITE_BODY_THRESHOLD and attempt < max_attempts:
+                    last_lite_body_size = body_size
+                    logger.info(
+                        "Lite variant on attempt %d/%d for %s, retrying in %ds",
+                        attempt, max_attempts, self.username, retry_wait_ms // 1000,
+                    )
+                    self._page.wait_for_timeout(retry_wait_ms)
+                    continue
+                raise
+
+        if user_node is None or pass_node is None or btn_node is None:
+            # Solo llegamos aquí si agotamos reintentos en variante lite sin
+            # que _find_login_elements llegara a lanzar (poco probable, pero
+            # cubrimos el caso para no seguir con nodos None).
+            raise CheckJCFormError(
+                f"CheckJC kept serving the lite variant for {self.username} "
+                f"after {max_attempts} attempts (last body size: "
+                f"{last_lite_body_size} bytes). Anti-bot is hard-locked from "
+                f"this egress IP; consider rotating the NordVPN exit or "
+                f"raising CHECKJC_LITE_RETRY_SECONDS."
             )
 
-        # Buscamos inputs y botón dentro del shadow DOM closed vía CDP.
-        user_node, pass_node, btn_node = self._find_login_elements()
         logger.info(
             f"Form found via CDP: user_nodeId={user_node}, "
             f"pass_nodeId={pass_node}, btn_nodeId={btn_node}"
