@@ -380,7 +380,7 @@ EN = {
     'google_api_step3': 'Copy the key and paste it above.',
     'google_api_security_note': 'The key is encrypted at rest (same crypto as your CheckJC password). It is only used to call Gemini to solve the verification captcha — never sent anywhere else.',
     'gemini_model_label': 'Model',
-    'gemini_model_help': 'Pick the Gemini model used to solve the captcha. gemini-2.5-flash is a good balance of speed and accuracy.',
+    'gemini_model_help': 'Pick the Gemini model used to solve the captcha. gemini-2.5-flash-lite is the recommended default: it works on the free tier and is the cheapest. gemini-2.5-flash also works (thinking is disabled internally). gemini-2.5-pro requires a paid plan; gemini-2.0-flash is legacy.',
 }
 
 # Spanish translations
@@ -759,7 +759,7 @@ ES = {
     'google_api_step3': 'Copia la key y pégala arriba.',
     'google_api_security_note': 'La key se guarda cifrada en la base de datos (mismo cifrado que tu contraseña de CheckJC). Solo se usa para llamar a Gemini y resolver el captcha — nunca se manda a ningún otro sitio.',
     'gemini_model_label': 'Modelo',
-    'gemini_model_help': 'Elige el modelo de Gemini que se usa para resolver el captcha. gemini-2.5-flash es un buen equilibrio entre velocidad y precisión.',
+    'gemini_model_help': 'Elige el modelo de Gemini para resolver el captcha. gemini-2.5-flash-lite es el recomendado: funciona en el free tier y es el más barato. gemini-2.5-flash también va bien (deshabilitamos su "thinking" internamente). gemini-2.5-pro requiere plan de pago; gemini-2.0-flash es legacy.',
 }
 
 # Dictionary containing all translations

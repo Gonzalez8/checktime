@@ -77,8 +77,11 @@ def call_gemini(api_key: str, model: str, image_bytes: bytes, timeout: int = 30)
         ],
         "generationConfig": {
             "temperature": 0,
-            "maxOutputTokens": 32,
+            "maxOutputTokens": 64,
             "candidateCount": 1,
+            # 2.5-flash is a "thinking model"; without this it spends
+            # its output budget thinking and returns a truncated reply.
+            "thinkingConfig": {"thinkingBudget": 0},
         },
     }
     resp = requests.post(url, json=body, timeout=timeout)
@@ -104,8 +107,8 @@ def main(argv=None):
     parser.add_argument("--api-key", required=True, help="Gemini API key")
     parser.add_argument("--image", required=True, help="Path to the composite PNG")
     parser.add_argument(
-        "--model", default="gemini-2.5-flash",
-        help="Gemini model id (default: gemini-2.5-flash)",
+        "--model", default="gemini-2.5-flash-lite",
+        help="Gemini model id (default: gemini-2.5-flash-lite)",
     )
     args = parser.parse_args(argv)
 
