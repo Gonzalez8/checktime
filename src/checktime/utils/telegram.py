@@ -61,31 +61,35 @@ class TelegramClient:
             logger.error(f"Error sending photo to Telegram chat {target_chat_id}: {e}")
             return False
 
-    def send_message(self, message: str, chat_id: Optional[str] = None, parse_mode: str = "Markdown") -> bool:
+    def send_message(self, message: str, chat_id: Optional[str] = None, parse_mode: Optional[str] = "Markdown") -> bool:
         """
         Send a message via Telegram to a specific chat ID or the default one.
-        
+
         Args:
             message (str): Message to send
             chat_id (Optional[str]): Chat ID where message will be sent. If None, uses default.
-            parse_mode (str): Parse mode for the message (Markdown or HTML)
-        
+            parse_mode (Optional[str]): Parse mode for the message ("Markdown",
+                "HTML", or None for plain text). None avoids Telegram's
+                400 Bad Request on messages that contain URLs or dots that
+                Markdown rejects.
+
         Returns:
             bool: True if the message was sent successfully, False otherwise
         """
         # Use specified chat ID or fall back to default
         target_chat_id = chat_id or self.default_chat_id
-        
+
         if not self.token or not target_chat_id:
             logger.warning("Telegram credentials not configured, message not sent")
             return False
-            
+
         url = f"{self.base_url}/sendMessage"
         data = {
             "chat_id": target_chat_id,
             "text": message,
-            "parse_mode": parse_mode
         }
+        if parse_mode:
+            data["parse_mode"] = parse_mode
         
         try:
             response = requests.post(url, data=data)

@@ -162,38 +162,46 @@ def perform_check_for_user(user, check_type):
         return
 
     logger.info(f"Starting {check_type} check process for user {user.username}...")
-    
-    try:
-        captcha_solver = TelegramHumanSolver(telegram_client=telegram_client)
-        with CheckJCClient(
-            username=user.checkjc_username,
-            password=user.checkjc_password,
-            subdomain=user.checkjc_subdomain,
-            captcha_solver=captcha_solver,
-            user=user,
-            check_type=check_type,
-        ) as client:
-            client.login()
-            if check_type == "in":
-                client.check_in()
-                icon = "🟢"
-            else:
-                client.check_out()
-                icon = "🔴"
-            logger.info(f"{check_type.capitalize()} check completed successfully for user {user.username}.")
-            if hasattr(user, 'telegram_chat_id') and user.telegram_chat_id:
-                if (hasattr(user, 'telegram_chat_id') and user.telegram_chat_id and getattr(user, 'telegram_notifications_enabled', False)):
-                    telegram_client.send_message(f"{icon} Check {check_type} completed successfully", chat_id=user.telegram_chat_id)
-    except Exception as e:
-        # logger.exception incluye el traceback completo: tipo de excepción,
-        # mensaje y línea exacta donde se lanzó. Va al fichero y a stdout.
-        logger.exception(
-            "Error during check %s for user %s (%s)",
-            check_type, user.username, type(e).__name__,
-        )
-        telegram_msg = _format_error_for_telegram(check_type, user.username, e)
-        if hasattr(user, 'telegram_chat_id') and user.telegram_chat_id and getattr(user, 'telegram_notifications_enabled', False):
-            telegram_client.send_message(telegram_msg, chat_id=user.telegram_chat_id)
+
+    # The captcha solver hits the DB (PendingCaptcha) and the bot listener
+    # polls the same rows from another process. Both need an active Flask
+    # app context for db.session to resolve. Wrap the whole fichaje in one.
+    with app.app_context():
+        try:
+            captcha_solver = TelegramHumanSolver(telegram_client=telegram_client)
+            with CheckJCClient(
+                username=user.checkjc_username,
+                password=user.checkjc_password,
+                subdomain=user.checkjc_subdomain,
+                captcha_solver=captcha_solver,
+                user=user,
+                check_type=check_type,
+            ) as client:
+                client.login()
+                if check_type == "in":
+                    client.check_in()
+                    icon = "🟢"
+                else:
+                    client.check_out()
+                    icon = "🔴"
+                logger.info(f"{check_type.capitalize()} check completed successfully for user {user.username}.")
+                if hasattr(user, 'telegram_chat_id') and user.telegram_chat_id:
+                    if (hasattr(user, 'telegram_chat_id') and user.telegram_chat_id and getattr(user, 'telegram_notifications_enabled', False)):
+                        telegram_client.send_message(f"{icon} Check {check_type} completed successfully", chat_id=user.telegram_chat_id)
+        except Exception as e:
+            # logger.exception incluye el traceback completo: tipo de excepción,
+            # mensaje y línea exacta donde se lanzó. Va al fichero y a stdout.
+            logger.exception(
+                "Error during check %s for user %s (%s)",
+                check_type, user.username, type(e).__name__,
+            )
+            telegram_msg = _format_error_for_telegram(check_type, user.username, e)
+            if hasattr(user, 'telegram_chat_id') and user.telegram_chat_id and getattr(user, 'telegram_notifications_enabled', False):
+                # parse_mode=None: error messages may contain URLs or dots
+                # that Telegram's Markdown parser rejects with 400.
+                telegram_client.send_message(
+                    telegram_msg, chat_id=user.telegram_chat_id, parse_mode=None,
+                )
 
 def get_users_to_check_now():
     """
