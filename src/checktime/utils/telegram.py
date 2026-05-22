@@ -26,6 +26,41 @@ class TelegramClient:
         self.default_chat_id = chat_id or get_telegram_chat_id()
         self.base_url = f"https://api.telegram.org/bot{self.token}"
     
+    def send_photo(
+        self,
+        photo_bytes: bytes,
+        chat_id: Optional[str] = None,
+        caption: Optional[str] = None,
+        parse_mode: str = "Markdown",
+        filename: str = "captcha.png",
+    ) -> bool:
+        """
+        Send a photo (as raw bytes) to a Telegram chat.
+
+        Used to relay the CheckJC captcha image to the user. Returns True on
+        success, False on any error (logged).
+        """
+        target_chat_id = chat_id or self.default_chat_id
+        if not self.token or not target_chat_id:
+            logger.warning("Telegram credentials not configured, photo not sent")
+            return False
+
+        url = f"{self.base_url}/sendPhoto"
+        files = {"photo": (filename, photo_bytes, "image/png")}
+        data = {"chat_id": target_chat_id}
+        if caption:
+            data["caption"] = caption
+            data["parse_mode"] = parse_mode
+
+        try:
+            response = requests.post(url, data=data, files=files, timeout=15)
+            response.raise_for_status()
+            logger.info(f"Photo sent to Telegram chat {target_chat_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Error sending photo to Telegram chat {target_chat_id}: {e}")
+            return False
+
     def send_message(self, message: str, chat_id: Optional[str] = None, parse_mode: str = "Markdown") -> bool:
         """
         Send a message via Telegram to a specific chat ID or the default one.

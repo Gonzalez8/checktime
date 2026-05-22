@@ -13,6 +13,13 @@ from checktime.utils.telegram import TelegramClient
 from checktime.shared.services.holiday_manager import HolidayManager
 from checktime.shared.services.user_manager import UserManager
 from checktime.shared.config import get_telegram_token
+from checktime.shared.db import db
+from checktime.shared.models.captcha import (
+    PendingCaptcha,
+    STATE_ANSWERED,
+    STATE_WAITING,
+)
+from checktime.scheduler.captcha_solver import cleanup_expired_captchas
 from checktime.web import create_app
 
 # Configure logging
@@ -84,6 +91,11 @@ class TelegramBotListener:
             response = f"Your Telegram Chat ID is: `{chat_id}`\n\nCopy this ID and paste it in your user profile to receive notifications."
             self.telegram.send_message(response, chat_id)
             return
+
+        # Intercept captcha replies before normal command handling so a 6-digit
+        # message goes to the waiting scheduler instead of falling through.
+        if self.try_handle_captcha_reply(chat_id, text):
+            return
         
         # For commands that require authentication, find the user
         with app.app_context():
@@ -125,6 +137,59 @@ class TelegramBotListener:
                 )
                 return
     
+    def try_handle_captcha_reply(self, chat_id: str, text: str) -> bool:
+        """If this chat has a captcha awaiting a reply, route the message to it.
+
+        Returns True iff the message was handled as a captcha reply (so the
+        caller should stop further command processing).
+        """
+        digits = re.sub(r"\D", "", text)
+        with app.app_context():
+            user = self.get_user_by_chat_id(chat_id)
+            if not user:
+                return False
+            pending = (
+                PendingCaptcha.query
+                .filter_by(user_id=user.id, state=STATE_WAITING)
+                .order_by(PendingCaptcha.created_at.desc())
+                .first()
+            )
+            if pending is None:
+                return False
+
+            # There IS a waiting captcha — anything the user types here is
+            # treated as a reply attempt.
+            if len(digits) != 6:
+                self.telegram.send_message(
+                    "Necesito *exactamente 6 dígitos* del captcha. Inténtalo otra vez.",
+                    chat_id,
+                    parse_mode="Markdown",
+                )
+                return True
+
+            if pending.is_expired():
+                from checktime.shared.models.captcha import STATE_EXPIRED
+                pending.state = STATE_EXPIRED
+                db.session.commit()
+                self.telegram.send_message(
+                    "⌛ El captcha ya caducó. Tu fichaje se intentará en el próximo ciclo.",
+                    chat_id,
+                )
+                return True
+
+            pending.response = digits
+            pending.state = STATE_ANSWERED
+            db.session.commit()
+            self.telegram.send_message(
+                f"✅ Recibido. Procesando tu fichaje...",
+                chat_id,
+            )
+            bot_logger.info(
+                "Captcha reply recorded for user %s (row=%d): %s",
+                user.username, pending.id, digits,
+            )
+            return True
+
     def parse_add_holiday_command(self, text):
         """Parse add holiday command text."""
         match = re.match(ADD_HOLIDAY_PATTERN, text)
@@ -250,23 +315,35 @@ class TelegramBotListener:
         """Listen for and process Telegram commands."""
         bot_logger.info("Starting Telegram bot listener")
         self.telegram.send_message("🤖 Telegram bot listener started")
-        
+
+        ticks_since_cleanup = 0
         while True:
             try:
                 updates = self.telegram.get_updates(offset=self.last_update_id)
-                
+
                 for update in updates.get("result", []):
                     # Update the last processed update ID
                     update_id = update["update_id"]
                     self.last_update_id = update_id + 1
-                    
+
                     # Process the message if it contains a command
                     if "message" in update and "text" in update["message"]:
                         self.process_command(update["message"])
-                
+
+                # Sweep stale captcha rows every ~30 ticks (~30s) so the
+                # scheduler's wait_for_response unsticks promptly on TTL
+                ticks_since_cleanup += 1
+                if ticks_since_cleanup >= 30:
+                    ticks_since_cleanup = 0
+                    try:
+                        with app.app_context():
+                            cleanup_expired_captchas()
+                    except Exception as exc:  # pragma: no cover
+                        error_logger.warning(f"Captcha cleanup failed: {exc}")
+
                 # Small delay to prevent high CPU usage
                 time.sleep(1)
-                
+
             except Exception as e:
                 error_msg = f"Error in Telegram listener: {e}"
                 error_logger.error(error_msg)

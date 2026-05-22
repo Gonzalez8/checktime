@@ -7,6 +7,7 @@ from sqlalchemy import text
 from checktime.shared.db import db, init_db
 from checktime.shared.config import get_secret_key, get_database_url
 from checktime.shared.models.user import User
+from checktime.shared.models.captcha import PendingCaptcha  # noqa: F401 - register table
 from checktime.shared.services.user_manager import UserManager
 from checktime.web.translations import t
 
