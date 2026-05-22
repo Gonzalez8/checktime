@@ -30,6 +30,14 @@ class CheckJCIPBlocked(CheckJCError):
     Suele liberarse en ~10 minutos."""
 
 
+class CheckJCAccountLocked(CheckJCError):
+    """CheckJC ha bloqueado la CUENTA del usuario (no el IP) por
+    demasiados intentos fallidos. Esto NO se libera con tiempo corto
+    ni cambiando IP — solo el supervisor/admin de CheckJC puede
+    desbloquearlo. Cuando ocurre debemos detener el scheduler para
+    ese usuario y avisar inmediatamente, no reintentar."""
+
+
 class CheckJCLoginRejected(CheckJCError):
     """Login rechazado: el navegador no llegó al dashboard tras el submit.
     Puede ser credenciales malas o rate-limit silencioso."""
@@ -165,6 +173,19 @@ class CheckJCClient:
             body_size = len(body_text or "")
             last_body_size = body_size
 
+            # Per-user account lockout — completely fatal until a human
+            # at CheckJC unblocks. Detect FIRST so we never retry past
+            # this point and risk extending the ban.
+            remaining = self._account_lock_message(body_text)
+            if remaining is not None:
+                raise CheckJCAccountLocked(
+                    f"CheckJC account for {self.username} is locked. "
+                    f"Remaining: {remaining}. The user must ask their "
+                    f"CheckJC supervisor or admin to unlock the account. "
+                    f"Disable auto-checkin for this user in CheckTime to "
+                    f"stop the scheduler from making things worse."
+                )
+
             # Banner de IP bloqueada — esto no se arregla reintentando.
             mins = self._ip_block_minutes(body_text)
             if mins is not None:
@@ -216,78 +237,60 @@ class CheckJCClient:
             f"pass_nodeId={pass_node}, btn_nodeId={btn_node}"
         )
 
-        # Submit loop. Stencil sometimes hydrates the form's hidden CSRF
-        # token *after* the visible inputs become interactable — if we
-        # click too early, CheckJC silently rejects the POST and we get
-        # bounced back to /login. So: on a small body (lite variant) we
-        # wait extra before clicking, and on rejection we reload and try
-        # one more time with a longer warm-up.
-        max_submit_attempts = 2
-        for submit_attempt in range(1, max_submit_attempts + 1):
-            if last_body_size is not None and last_body_size < _LITE_BODY_THRESHOLD:
-                extra_wait_ms = 3000 if submit_attempt == 1 else 6000
-                logger.info(
-                    "Body is small (%d bytes); waiting %dms extra for Stencil "
-                    "to hydrate the form token before submitting (attempt %d/%d)",
-                    last_body_size, extra_wait_ms, submit_attempt, max_submit_attempts,
-                )
-                self._page.wait_for_timeout(extra_wait_ms)
-
-            # Rellenar inputs.
-            self._cdp_focus(user_node)
-            self._cdp.send("Input.insertText", {"text": self.username})
-            self._cdp_focus(pass_node)
-            self._cdp.send("Input.insertText", {"text": self.password})
-
-            # Click sobre el botón en sus coordenadas reales.
-            self._cdp_click(btn_node)
+        # Stencil sometimes hydrates the form's hidden CSRF token *after*
+        # the visible inputs become interactable. On a small body (lite
+        # variant) we wait extra before clicking to give it time. We do
+        # NOT retry on rejection — each failed submit counts toward
+        # CheckJC's per-account lockout, and the v1.9.4 double-submit
+        # caused a real account ban. The pre-`login()` lite-variant
+        # retry loop already handled DOM hydration; this just adds a
+        # safety wait for the CSRF token specifically.
+        if last_body_size is not None and last_body_size < _LITE_BODY_THRESHOLD:
             logger.info(
-                "Login button clicked for %s (submit attempt %d/%d)",
-                self.username, submit_attempt, max_submit_attempts,
+                "Body is small (%d bytes); waiting 3s extra for Stencil to "
+                "hydrate the form token before submitting",
+                last_body_size,
             )
+            self._page.wait_for_timeout(3000)
 
-            # Esperar a que el navegador salga de /login. Si tras N seg
-            # seguimos ahí, fue rechazo (el server muestra /login otra vez).
-            try:
-                self._page.wait_for_url(
-                    lambda url: "/login" not in url, timeout=15000
+        # Rellenar inputs.
+        self._cdp_focus(user_node)
+        self._cdp.send("Input.insertText", {"text": self.username})
+        self._cdp_focus(pass_node)
+        self._cdp.send("Input.insertText", {"text": self.password})
+
+        # Click sobre el botón en sus coordenadas reales.
+        self._cdp_click(btn_node)
+        logger.info("Login button clicked for %s", self.username)
+
+        # Esperar a que el navegador salga de /login. Si tras N seg
+        # seguimos ahí, fue rechazo. NO reintentamos: cuenta puede
+        # bloquearse permanentemente tras X fallos consecutivos.
+        try:
+            self._page.wait_for_url(
+                lambda url: "/login" not in url, timeout=15000
+            )
+        except PWTimeout:
+            # Check both new banners that the retry could have surfaced:
+            body_after = self._page.content()
+            remaining = self._account_lock_message(body_after)
+            if remaining is not None:
+                raise CheckJCAccountLocked(
+                    f"CheckJC locked the account for {self.username} after "
+                    f"this submit. Remaining: {remaining}. Disable "
+                    f"auto-checkin for this user in CheckTime."
                 )
-                break  # navigated away → login OK
-            except PWTimeout:
-                pass
-
-            # Still on /login. IP block banner?
-            mins = self._ip_block_minutes(self._page.content())
+            mins = self._ip_block_minutes(body_after)
             if mins is not None:
                 raise CheckJCIPBlocked(
                     f"CheckJC blocked this IP after failed attempts for {self.username}. "
                     f"Retry available in {mins} minutes (per server)."
                 )
-
-            if submit_attempt >= max_submit_attempts:
-                raise CheckJCLoginRejected(
-                    f"CheckJC rejected the login for {self.username} "
-                    f"after {max_submit_attempts} attempts: still at "
-                    f"{self._page.url!r} after submit. "
-                    f"Check if the user can log in via the web."
-                )
-
-            # Reload form and re-locate elements: nodeIds may be stale and
-            # Stencil might be more ready on the second go.
-            logger.warning(
-                "Login submit rejected for %s on attempt %d, reloading and retrying",
-                self.username, submit_attempt,
+            raise CheckJCLoginRejected(
+                f"CheckJC rejected the login for {self.username}: "
+                f"still at {self._page.url!r} after submit. "
+                f"Check if the user can log in via the web."
             )
-            self._page.goto(self.login_url, wait_until="networkidle")
-            self._page.wait_for_timeout(2000)
-            try:
-                user_node, pass_node, btn_node = self._find_login_elements()
-            except CheckJCFormError:
-                raise CheckJCLoginRejected(
-                    f"CheckJC rejected the login for {self.username} and the "
-                    f"form is no longer locatable on the retry — bailing out."
-                )
-            last_body_size = len(self._page.content() or "")
 
         logger.info(f"Login successful for {self.username}, landed at {self._page.url}")
 
@@ -763,3 +766,28 @@ class CheckJCClient:
             return None
         m = re.search(r'dentro de\s+(\d+)\s+minutos?', html, re.IGNORECASE)
         return int(m.group(1)) if m else 0
+
+    @staticmethod
+    def _account_lock_message(html):
+        """Detect CheckJC's per-user account lockout banner.
+
+        Sample text (May 2026):
+            "No se permitirán nuevos intentos de acceso para el usuario
+             47779708z hasta dentro de 2 meses, 30 días, 23 horas, 17
+             minutos. Contacte con su supervisor o administrador de la
+             plataforma."
+
+        Returns the human-readable remaining time ("2 meses, 30 días,
+        23 horas, 17 minutos") if the banner is present, else None.
+        Catching this early lets us short-circuit before submitting
+        another doomed login attempt.
+        """
+        if not html:
+            return None
+        if "no se permitirán nuevos intentos" not in html.lower():
+            return None
+        m = re.search(
+            r"hasta dentro de\s+([^.]+?)\.\s*Contacte",
+            html, re.IGNORECASE,
+        )
+        return m.group(1).strip() if m else "unknown duration"

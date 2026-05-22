@@ -12,8 +12,9 @@ import threading
 import concurrent.futures
 
 from checktime.scheduler.checker import (
-    CheckJCClient,
+    CheckJCAccountLocked,
     CheckJCCaptchaFailed,
+    CheckJCClient,
     CheckJCIPBlocked,
     CheckJCLoginRejected,
     CheckJCSessionLost,
@@ -57,6 +58,12 @@ def _format_error_for_telegram(check_type, username, exc):
     exc_name = type(exc).__name__
     base = f"Check {check_type} for {username}"
 
+    if isinstance(exc, CheckJCAccountLocked):
+        return (
+            f"⛔ {base}: tu cuenta de CheckJC está BLOQUEADA. "
+            f"{exc} Pide al admin/supervisor de CheckJC que la desbloquee y "
+            f"desactiva el auto-checkin en CheckTime mientras tanto."
+        )
     if isinstance(exc, CheckJCIPBlocked):
         return f"🚫 {base}: {exc}"
     if isinstance(exc, CheckJCLoginRejected):
