@@ -262,16 +262,17 @@ class CheckJCClient:
         Strategy (validated end-to-end against production CheckJC):
         - The 10 keypad buttons each carry a data-value letter that stays
           stable for the session; only positions shuffle after each click.
-        - Capture the captcha image once + the 10 keypad button images
-          once, OCR the keypad images to build letter -> digit mapping.
-        - Hand the distorted captcha to the solver; receive 6 digits back.
-        - For each digit, look up its letter, re-read the DOM (positions
-          have moved), click that letter's current position.
+        - Capture the captcha image and the 10 keypad button images, hand
+          everything to the solver. The solver (Telegram human today,
+          LLM tomorrow) is responsible for reading BOTH the distorted
+          captcha and the 10 clean keypad digits and returning the
+          6-letter click sequence.
+        - For each letter, re-read the DOM and click its current
+          position. Positions reshuffle after each click but the letters
+          themselves are stable.
         - Submit, verify we landed on /portal/employee. Retry once on
           /verification reappearing (wrong reply).
         """
-        from checktime.scheduler.keypad_reader import build_letter_to_digit_map
-
         if self._captcha_solver is None or self._user is None:
             raise CheckJCCaptchaFailed(
                 f"CheckJC served /verification for {self.username} but no "
@@ -289,52 +290,38 @@ class CheckJCClient:
                     f"CheckJC probably changed the verification page HTML."
                 )
 
-            letter_to_digit = build_letter_to_digit_map(
-                (letter, png) for letter, _, _, png in keypad_buttons
-            )
-            digit_to_letter = {d: l for l, d in letter_to_digit.items()}
-            if len(digit_to_letter) < 10:
-                missing = set("0123456789") - set(digit_to_letter)
-                raise CheckJCFormError(
-                    f"Keypad OCR for {self.username} missed digits: {missing}. "
-                    f"Mapping was {letter_to_digit}. Check tesseract install."
-                )
+            # The solver wants (letter, png_bytes). Keep order stable across
+            # the call so the solver and our DOM agree on which button is
+            # at which index.
+            keypad_for_solver = [(letter, png) for letter, _, _, png in keypad_buttons]
 
-            response = self._captcha_solver.solve(
+            sequence = self._captcha_solver.solve(
                 captcha_image_bytes=captcha_bytes,
+                keypad=keypad_for_solver,
                 user=self._user,
                 check_type=self._check_type,
                 attempt=attempt,
             )
-            if not response:
+            if not sequence:
                 raise CheckJCCaptchaFailed(
-                    f"Captcha solver returned no response for {self.username} "
-                    f"on attempt {attempt}. Likely user timeout."
+                    f"Captcha solver returned no sequence for {self.username} "
+                    f"on attempt {attempt}. Likely user timeout or malformed reply."
                 )
-
-            response = response.strip()
-            if not re.fullmatch(r"\d{6}", response):
+            if len(sequence) != 6:
                 logger.warning(
-                    "Captcha reply for %s is not 6 digits (%r); treating as failure",
-                    self.username, response,
+                    "Captcha solver returned %d letters (expected 6) for %s",
+                    len(sequence), self.username,
                 )
                 if attempt < max_captcha_attempts:
                     continue
                 raise CheckJCCaptchaFailed(
-                    f"Captcha solver returned malformed reply {response!r} "
+                    f"Captcha solver returned wrong-length sequence {sequence!r} "
                     f"for {self.username}."
                 )
 
-            # Translate digits -> letters, then click each by re-reading DOM
-            try:
-                sequence = [digit_to_letter[d] for d in response]
-            except KeyError as e:
-                raise CheckJCFormError(
-                    f"Digit {e} not present in keypad mapping for {self.username}"
-                )
             logger.info(
-                "Submitting captcha for %s (attempt %d): %s -> letters %s",
-                self.username, attempt, response, sequence,
+                "Submitting captcha for %s (attempt %d): letters %s",
+                self.username, attempt, sequence,
             )
             for letter in sequence:
                 pos = self._current_position_of_letter(letter)

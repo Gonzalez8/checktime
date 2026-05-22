@@ -159,9 +159,10 @@ class TelegramBotListener:
 
             # There IS a waiting captcha — anything the user types here is
             # treated as a reply attempt.
-            if len(digits) != 6:
+            if len(digits) != 16:
                 self.telegram.send_message(
-                    "Necesito *exactamente 6 dígitos* del captcha. Inténtalo otra vez.",
+                    "Necesito *16 dígitos en total*: los 10 del teclado y los 6 "
+                    "del captcha. Inténtalo otra vez con la próxima imagen.",
                     chat_id,
                     parse_mode="Markdown",
                 )

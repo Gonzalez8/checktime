@@ -21,7 +21,6 @@ setup(
         "alembic>=1.13.1",
         "cryptography>=41.0.1",
         "gunicorn>=21.2.0",
-        "pytesseract>=0.3.10",
         "Pillow>=10.0.0"
     ],
     python_requires=">=3.8",

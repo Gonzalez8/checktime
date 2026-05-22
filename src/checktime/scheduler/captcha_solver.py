@@ -21,11 +21,12 @@ Two implementations live here:
 
 from __future__ import annotations
 
+import io
 import logging
 import time
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional, Tuple
 
 from checktime.shared.db import db
 from checktime.shared.models.captcha import (
@@ -42,28 +43,47 @@ from checktime.utils.telegram import TelegramClient
 logger = logging.getLogger(__name__)
 
 
+# Each keypad entry passed to the solver: (data-value letter, PNG bytes of
+# the small undistorted digit image inside the button).
+KeypadEntry = Tuple[str, bytes]
+
+
 class CaptchaSolver(ABC):
     """
-    Abstract solver for CheckJC's 6-digit verification captcha.
+    Abstract solver for CheckJC's verification page.
 
-    Implementations get the raw distorted image (JPEG bytes) and return the
-    decoded 6-digit string, or ``None`` if they could not solve it in time.
+    The solver receives:
+    - The distorted JPEG of the 6-digit captcha (anti-OCR).
+    - The 10 small undistorted PNGs of the keypad buttons (one per digit
+      0-9 shuffled into random data-value letters per session).
 
-    Implementations MUST NOT touch the keypad mapping (data-value letters)
-    — they only decode the distorted image into a 6-digit string. The
-    caller is responsible for mapping digits to the right buttons.
+    The solver returns the **sequence of 6 letters** to click (in order)
+    to enter the captcha into CheckJC's keypad — or ``None`` if it could
+    not solve in time.
+
+    Returning letters (not digits) lets the implementation own both halves
+    of the puzzle: reading the distorted captcha AND identifying which
+    digit each keypad button shows. That way:
+    - The TelegramHumanSolver can ask the user once and get all 16 digits
+      in a single reply.
+    - A future LLMVisionSolver can solve everything with one vision call.
+    - CheckJCClient stays simple: it just iterates the returned letters,
+      re-reading the DOM between clicks to find each letter's current
+      position (positions reshuffle after every click but letters do
+      not).
     """
 
     @abstractmethod
     def solve(
         self,
         captcha_image_bytes: bytes,
+        keypad: List[KeypadEntry],
         user: User,
         check_type: str,
         attempt: int = 1,
         timeout_seconds: int = 300,
-    ) -> Optional[str]:
-        """Return the 6-digit captcha as a string, or None on timeout/error."""
+    ) -> Optional[List[str]]:
+        """Return the 6-letter click sequence, or None on timeout/error."""
         raise NotImplementedError
 
 
@@ -96,23 +116,34 @@ class TelegramHumanSolver(CaptchaSolver):
     def solve(
         self,
         captcha_image_bytes: bytes,
+        keypad: List[KeypadEntry],
         user: User,
         check_type: str,
         attempt: int = 1,
         timeout_seconds: int = 300,
-    ) -> Optional[str]:
+    ) -> Optional[List[str]]:
         if not user.telegram_chat_id:
             logger.warning(
                 "User %s has no telegram_chat_id; cannot relay captcha",
                 user.username,
             )
             return None
+        if len(keypad) != 10:
+            logger.error(
+                "Expected 10 keypad buttons, got %d for user %s",
+                len(keypad), user.username,
+            )
+            return None
 
-        # Step 1: persist the pending row
+        # Compose: captcha on top, keypad strip below, all in a single PNG.
+        composite_png = self._compose_image(captcha_image_bytes, keypad)
+
+        # Persist the pending row with the composite image so the user can
+        # always re-fetch it if needed (we store what we actually sent).
         row = PendingCaptcha.create(
             user_id=user.id,
             check_type=check_type,
-            image_bytes=captcha_image_bytes,
+            image_bytes=composite_png,
             attempt=attempt,
             ttl_seconds=timeout_seconds,
         )
@@ -121,14 +152,13 @@ class TelegramHumanSolver(CaptchaSolver):
             user.username, row.id, attempt, timeout_seconds,
         )
 
-        # Step 2: ship the image to the user
         caption = self._build_caption(check_type, attempt, timeout_seconds)
         ok = self.telegram.send_photo(
-            photo_bytes=captcha_image_bytes,
+            photo_bytes=composite_png,
             chat_id=user.telegram_chat_id,
             caption=caption,
             parse_mode="Markdown",
-            filename=f"captcha_{user.username}_{row.id}.jpg",
+            filename=f"captcha_{user.username}_{row.id}.png",
         )
         if not ok:
             row.state = STATE_FAILED
@@ -136,8 +166,117 @@ class TelegramHumanSolver(CaptchaSolver):
             logger.error("Failed to deliver captcha image to user %s", user.username)
             return None
 
-        # Step 3: poll the DB until the row changes state or expires
-        return self._wait_for_response(row.id, timeout_seconds, user)
+        # Wait for the user to reply with 16 digits, then translate captcha
+        # digits to keypad letters and return the click sequence.
+        raw = self._wait_for_response(row.id, timeout_seconds, user)
+        if raw is None:
+            return None
+
+        return self._translate(raw, keypad, user)
+
+    def _translate(self, raw: str, keypad: List[KeypadEntry], user: User) -> Optional[List[str]]:
+        """Turn "<10 keypad digits><6 captcha digits>" into 6 letters to click."""
+        digits = ''.join(ch for ch in raw if ch.isdigit())
+        if len(digits) != 16:
+            logger.warning(
+                "Captcha reply for user %s does not contain 16 digits (got %d): %r",
+                user.username, len(digits), digits,
+            )
+            try:
+                self.telegram.send_message(
+                    "Necesito *16 dígitos* en total: los 10 del teclado y los 6 del captcha. "
+                    "Inténtalo otra vez con el próximo fichaje.",
+                    chat_id=user.telegram_chat_id,
+                    parse_mode="Markdown",
+                )
+            except Exception:
+                pass
+            return None
+
+        keypad_digits = digits[:10]
+        captcha_digits = digits[10:]
+
+        # Each keypad digit must be unique (one per 0-9) — sanity check
+        if len(set(keypad_digits)) != 10:
+            logger.warning(
+                "Keypad digits not unique for user %s: %s", user.username, keypad_digits,
+            )
+            return None
+
+        # Build digit -> letter using the keypad order we sent
+        digit_to_letter = {}
+        for (letter, _), digit in zip(keypad, keypad_digits):
+            digit_to_letter[digit] = letter
+
+        try:
+            sequence = [digit_to_letter[d] for d in captcha_digits]
+        except KeyError as e:
+            logger.warning("Captcha digit %s not present in keypad for user %s", e, user.username)
+            return None
+        logger.info(
+            "Translated captcha for user %s: %s via keypad %s -> %s",
+            user.username, captcha_digits, keypad_digits, sequence,
+        )
+        return sequence
+
+    def _compose_image(self, captcha_bytes: bytes, keypad: List[KeypadEntry]) -> bytes:
+        """Stack the captcha on top, then a labeled strip of the 10 keypad PNGs.
+
+        Returns a PNG of the composite. PIL handles JPEG/PNG inputs.
+        """
+        from PIL import Image, ImageDraw, ImageFont
+
+        captcha = Image.open(io.BytesIO(captcha_bytes)).convert("RGB")
+        button_imgs = [Image.open(io.BytesIO(png)).convert("RGBA") for _, png in keypad]
+
+        # Captcha gets scaled to a comfortable width (640).
+        target_w = 640
+        scale = target_w / captcha.width
+        captcha_w = target_w
+        captcha_h = int(captcha.height * scale)
+        captcha = captcha.resize((captcha_w, captcha_h))
+
+        # Each button: 100 wide max, keeping aspect. They're tiny (~55x33).
+        btn_h = 60
+        btn_scale = btn_h / button_imgs[0].height
+        btn_w = int(button_imgs[0].width * btn_scale)
+        gap = 14
+        strip_w = btn_w * 10 + gap * 9 + 20  # 10 buttons with gaps + padding
+        # Add room for a "1.." index label above each button (font 18)
+        label_h = 26
+        strip_h = label_h + btn_h + 10
+
+        total_w = max(captcha_w, strip_w) + 20
+        total_h = captcha_h + 30 + strip_h + 20
+        canvas = Image.new("RGB", (total_w, total_h), (245, 245, 245))
+
+        # Captcha centered horizontally
+        cx = (total_w - captcha_w) // 2
+        canvas.paste(captcha, (cx, 10))
+
+        # Keypad strip below, with index labels 1..10
+        strip_x0 = (total_w - strip_w) // 2 + 10
+        strip_y0 = captcha_h + 30
+        try:
+            font = ImageFont.truetype(
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 18
+            )
+        except Exception:
+            font = ImageFont.load_default()
+        draw = ImageDraw.Draw(canvas)
+        for i, bimg in enumerate(button_imgs):
+            x = strip_x0 + i * (btn_w + gap)
+            # Index label
+            draw.text((x + btn_w // 2 - 6, strip_y0), f"{i+1}", fill=(40, 40, 40), font=font)
+            # Composite button on white background and paste
+            bw = bimg.resize((btn_w, btn_h))
+            bg = Image.new("RGB", (btn_w, btn_h), (255, 255, 255))
+            bg.paste(bw, (0, 0), mask=bw.split()[3] if bw.mode == "RGBA" else None)
+            canvas.paste(bg, (x, strip_y0 + label_h))
+
+        buf = io.BytesIO()
+        canvas.save(buf, format="PNG")
+        return buf.getvalue()
 
     def _wait_for_response(
         self,
@@ -194,8 +333,11 @@ class TelegramHumanSolver(CaptchaSolver):
         suffix = "" if attempt == 1 else f" *(reintento {attempt})*"
         return (
             f"🧩 *Captcha para tu fichaje de {action}*{suffix}\n\n"
-            f"Responde con los *6 dígitos* de la imagen para que registre tu "
-            f"fichaje.\n\n"
+            f"Responde con *16 dígitos seguidos*: primero los *10 del teclado* "
+            f"(de izquierda a derecha en el orden 1→10) y luego los *6 del "
+            f"captcha*.\n\n"
+            f"Ejemplo: si el teclado fuera 4 0 3 6 5 7 2 9 1 8 y el captcha "
+            f"198142, responde `4036572918198142`.\n\n"
             f"⏱ Tienes {minutes} minutos."
         )
 
@@ -226,14 +368,17 @@ class LLMVisionSolver(CaptchaSolver):
     def solve(
         self,
         captcha_image_bytes: bytes,
+        keypad: List[KeypadEntry],
         user: User,
         check_type: str,
         attempt: int = 1,
         timeout_seconds: int = 300,
-    ) -> Optional[str]:
+    ) -> Optional[List[str]]:
         raise NotImplementedError(
             "LLMVisionSolver is a placeholder. Wire up an LLM client and "
-            "implement the vision call before using it."
+            "implement the vision call before using it. The LLM should "
+            "read both the captcha and the 10 keypad digit images, and "
+            "return the 6-letter click sequence."
         )
 
 
