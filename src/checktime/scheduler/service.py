@@ -20,7 +20,11 @@ from checktime.scheduler.checker import (
     CheckJCFormError,
     CheckJCUnexpectedResponse,
 )
-from checktime.scheduler.captcha_solver import TelegramHumanSolver
+from checktime.scheduler.captcha_solver import (
+    HybridCaptchaSolver,
+    LLMVisionSolver,
+    TelegramHumanSolver,
+)
 from checktime.shared.config import get_log_level, get_user_check_stagger_seconds
 from checktime.utils.telegram import TelegramClient
 from checktime.shared.services.holiday_manager import HolidayManager
@@ -168,7 +172,14 @@ def perform_check_for_user(user, check_type):
     # app context for db.session to resolve. Wrap the whole fichaje in one.
     with app.app_context():
         try:
-            captcha_solver = TelegramHumanSolver(telegram_client=telegram_client)
+            # Hybrid solver: try Gemini first if the user has an API key,
+            # otherwise (or on LLM failure) fall through to the Telegram
+            # human relay. TelegramHumanSolver is unchanged and remains
+            # the safety net so today's working flow stays intact.
+            captcha_solver = HybridCaptchaSolver(
+                llm=LLMVisionSolver(),
+                telegram=TelegramHumanSolver(telegram_client=telegram_client),
+            )
             with CheckJCClient(
                 username=user.checkjc_username,
                 password=user.checkjc_password,

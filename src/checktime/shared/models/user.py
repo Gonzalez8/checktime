@@ -35,6 +35,12 @@ class User(UserMixin, db.Model, TimestampMixin):
     password_reset_token_hash = db.Column(db.String(128), nullable=True)
     password_reset_token_expires_at = db.Column(db.DateTime, nullable=True)
 
+    # Optional per-user Google Gemini API key (encrypted at rest).
+    # If set, the captcha solver uses the LLM instead of asking the user
+    # via Telegram. Stored encrypted via checktime.utils.crypto, same as
+    # CheckJC passwords.
+    google_api_key_encrypted = db.Column("google_api_key", db.String(512), nullable=True)
+
     # Relationships
     holidays = db.relationship('Holiday', backref='user', lazy=True, cascade="all, delete-orphan")
     schedule_periods = db.relationship('SchedulePeriod', backref='user', lazy=True, cascade="all, delete-orphan")
@@ -73,6 +79,29 @@ class User(UserMixin, db.Model, TimestampMixin):
             self.telegram_chat_id is not None and
             self.telegram_notifications_enabled
         )
+
+    def set_google_api_key(self, api_key):
+        """Store the Google Gemini API key encrypted at rest.
+
+        Pass an empty string / None to clear the stored key.
+        """
+        if api_key:
+            self.google_api_key_encrypted = encrypt_string(api_key)
+        else:
+            self.google_api_key_encrypted = None
+
+    @property
+    def google_api_key(self):
+        """Decrypted Gemini API key, or None if not configured."""
+        if self.google_api_key_encrypted:
+            try:
+                return decrypt_string(self.google_api_key_encrypted)
+            except Exception:
+                return None
+        return None
+
+    def has_google_api_key(self):
+        return self.google_api_key_encrypted is not None
 
     @staticmethod
     def _hash_reset_token(raw_token: str) -> str:

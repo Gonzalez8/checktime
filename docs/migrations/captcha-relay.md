@@ -143,27 +143,60 @@ Estados: `WAITING → ANSWERED → CONSUMED`, o `WAITING → EXPIRED` /
 `CONSUMED` tras leer la respuesta. El bot tiene un sweeper que pasa
 filas a `EXPIRED` tras pasar `expires_at`.
 
-## Cómo plug-in del LLM (futuro)
+## v1.9.0: LLM solver (Google Gemini) + Hybrid fallback
 
-`captcha_solver.py::LLMVisionSolver` es un stub. Para activarlo:
+A partir de v1.9.0, cada usuario puede configurar su propia **API key
+de Google Gemini** en `/auth/profile` → *API Key de Google*. La key se
+cifra en disco con la misma utilidad que la contraseña de CheckJC
+(`User.set_google_api_key` → `encrypt_string`).
 
-1. Implementar `solve()` con tu cliente LLM preferido (Anthropic /
-   OpenAI / Gemini). Encoda `captcha_image_bytes` en base64 y envía
-   con prompt: *"Reply ONLY with the 6 digits visible in this captcha.
-   No other text."*
-2. Validar que la respuesta es 6 caracteres numéricos; reintentar
-   una vez si no.
-3. En `service.py`, cambiar la línea:
-   ```python
-   captcha_solver = TelegramHumanSolver(...)
-   ```
-   por:
-   ```python
-   captcha_solver = LLMVisionSolver(...)
-   # o un hybrid: primero LLM, fallback a TelegramHumanSolver si falla
-   ```
+`LLMVisionSolver` (en `captcha_solver.py`) está implementado contra el
+endpoint público de Google AI Studio:
 
-El resto del código no se entera.
+```
+POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=API_KEY
+```
+
+Manda la misma imagen compuesta (captcha + teclado etiquetado 1→10)
+que ve el humano por Telegram, pero con un prompt corto:
+
+> Reply with EXACTLY 16 digits and NOTHING else: first the 10 keypad
+> digits in order 1..10, then the 6 captcha digits.
+
+Y se reutiliza `translate_16_digits_to_letters` para convertir esos 16
+dígitos en la secuencia de 6 letras a clickar.
+
+### Hybrid solver (el que está enchufado en producción)
+
+`HybridCaptchaSolver` combina ambos:
+
+1. Si `user.google_api_key` está configurado → intenta `LLMVisionSolver`
+   primero.
+2. Si el LLM devuelve `None` por **cualquier motivo** (timeout, error
+   HTTP, respuesta malformada, key inválida) → cae automáticamente a
+   `TelegramHumanSolver`.
+3. Si el usuario **no tiene API key** → va directamente a Telegram.
+
+Así, el flujo Telegram que funcionaba antes de v1.9.0 sigue intacto
+y es la red de seguridad. Los usuarios que quieran fichaje 100%
+automático configuran su key y se olvidan.
+
+### Modelo y coste estimado
+
+- Modelo por defecto: `gemini-2.0-flash` (rápido y suficiente para
+  este captcha).
+- Coste: en el plan gratuito de Google AI Studio (~1500 RPD) está
+  cubierto para los 4 fichajes/día de un usuario.
+
+### Migrar a otro modelo / proveedor
+
+`LLMVisionSolver.DEFAULT_MODEL` y `LLMVisionSolver.ENDPOINT_TMPL` son
+constantes de clase. Para apuntar a otro modelo de Gemini, instanciar
+con `LLMVisionSolver(model="gemini-2.5-flash")` en `service.py`.
+
+Para usar Anthropic / OpenAI en su lugar, escribir otra subclase de
+`CaptchaSolver` y enchufarla en `service.py` (el resto del código no
+se entera — la interfaz devuelve igual una lista de 6 letras).
 
 ## Limitaciones conocidas
 

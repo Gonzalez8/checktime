@@ -94,6 +94,10 @@ class TelegramSettingsForm(FlaskForm):
     telegram_notifications_enabled = BooleanField('Enable Telegram Notifications', default=True)
     submit = SubmitField('Save Telegram Settings')
 
+class GoogleApiKeyForm(FlaskForm):
+    google_api_key = PasswordField('Google API Key', validators=[Optional()])
+    submit = SubmitField('Save Google API Key')
+
 class ForgotPasswordForm(FlaskForm):
     identifier = StringField('Username or Email', validators=[DataRequired()])
     submit = SubmitField('Send reset link')
@@ -273,6 +277,7 @@ def profile():
     
     checkjc_form = CheckJCCredentialsForm()
     telegram_form = TelegramSettingsForm()
+    google_api_form = GoogleApiKeyForm()
     
     # Handle CheckJC form submission
     if checkjc_form.is_submitted() and 'checkjc_submit' in request.form:
@@ -295,16 +300,38 @@ def profile():
         )
         flash(get_translation('telegram_settings_updated', get_language()), 'success')
         return redirect(url_for('auth.profile') + '#telegram-config')
-    
+
+    # Handle Google API key form submission
+    if google_api_form.is_submitted() and 'google_api_submit' in request.form:
+        if 'google_api_clear' in request.form:
+            user_manager.set_google_api_key(current_user.id, None)
+            flash(get_translation('google_api_key_cleared', get_language()), 'success')
+        else:
+            new_key = (google_api_form.google_api_key.data or "").strip()
+            if new_key:
+                user_manager.set_google_api_key(current_user.id, new_key)
+                flash(get_translation('google_api_key_saved', get_language()), 'success')
+            else:
+                # Empty submit without explicit clear: keep current key
+                flash(get_translation('google_api_key_unchanged', get_language()), 'info')
+        return redirect(url_for('auth.profile') + '#google-api-config')
+
     # Pre-fill CheckJC form with current values
     if request.method == 'GET':
         checkjc_form.checkjc_username.data = current_user.checkjc_username
         checkjc_form.auto_checkin_enabled.data = current_user.auto_checkin_enabled
         checkjc_form.checkjc_subdomain.data = current_user.checkjc_subdomain
-        
+
         # Pre-fill Telegram form with current values
         telegram_form.telegram_chat_id.data = current_user.telegram_chat_id
         telegram_form.telegram_notifications_enabled.data = current_user.telegram_notifications_enabled
-    
-    return render_template('auth/profile.html', title='Profile', form=form, 
-                          checkjc_form=checkjc_form, telegram_form=telegram_form) 
+
+    return render_template(
+        'auth/profile.html',
+        title='Profile',
+        form=form,
+        checkjc_form=checkjc_form,
+        telegram_form=telegram_form,
+        google_api_form=google_api_form,
+        google_api_key_set=current_user.has_google_api_key(),
+    )

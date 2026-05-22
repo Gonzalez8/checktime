@@ -20,6 +20,9 @@
                     <a href="#telegram-config" class="list-group-item list-group-item-action" data-bs-toggle="tab" role="tab">
                         <i class="bi bi-telegram"></i> {{ _('telegram_config') }}
                     </a>
+                    <a href="#google-api-config" class="list-group-item list-group-item-action" data-bs-toggle="tab" role="tab">
+                        <i class="bi bi-cpu"></i> {{ _('google_api_config') }}
+                    </a>
                 </div>
             </div>
         </div>
@@ -179,7 +182,65 @@
                                 </div>
                                 
                                 <div class="d-grid gap-2 mt-4">
-                                    {{ telegram_form.submit(class="btn btn-primary") }}
+                                    {{ telegram_form.submit(class="btn btn-primary", name="telegram_submit") }}
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Google API Key Tab -->
+                <div class="tab-pane fade" id="google-api-config" role="tabpanel">
+                    <div class="card shadow">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="mb-0"><i class="bi bi-cpu"></i> {{ _('google_api_config') }}</h5>
+                        </div>
+                        <div class="card-body">
+                            <p class="text-muted">{{ _('google_api_explanation') }}</p>
+
+                            <form method="post" action="{{ url_for('auth.profile') }}#google-api-config">
+                                {{ google_api_form.hidden_tag() }}
+                                <input type="hidden" name="google_api_submit" value="1">
+
+
+                                <div class="mb-3">
+                                    <label for="google_api_key" class="form-label">{{ _('google_api_key') }}</label>
+                                    {{ google_api_form.google_api_key(class="form-control", id="google_api_key", placeholder=_('google_api_key_placeholder')) }}
+                                    {% for error in google_api_form.google_api_key.errors %}
+                                    <div class="text-danger">{{ error }}</div>
+                                    {% endfor %}
+                                    <div class="form-text">
+                                        {% if google_api_key_set %}
+                                        <span class="text-success"><i class="bi bi-check-circle"></i> {{ _('google_api_key_currently_set') }}</span>
+                                        — {{ _('google_api_key_leave_empty') }}
+                                        {% else %}
+                                        <span class="text-muted"><i class="bi bi-dash-circle"></i> {{ _('google_api_key_not_set') }}</span>
+                                        {% endif %}
+                                    </div>
+                                </div>
+
+                                <div class="alert alert-info">
+                                    <h6 class="mb-2"><i class="bi bi-info-circle"></i> {{ _('google_api_how_to_get_title') }}</h6>
+                                    <ol class="mb-0">
+                                        <li>{{ _('google_api_step1') }} <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">aistudio.google.com/app/apikey</a></li>
+                                        <li>{{ _('google_api_step2') }}</li>
+                                        <li>{{ _('google_api_step3') }}</li>
+                                    </ol>
+                                </div>
+
+                                <div class="alert alert-warning small mb-3">
+                                    <i class="bi bi-shield-lock"></i> {{ _('google_api_security_note') }}
+                                </div>
+
+                                <div class="d-flex gap-2 mt-4">
+                                    {{ google_api_form.submit(class="btn btn-primary", name="google_api_submit") }}
+                                    {% if google_api_key_set %}
+                                    <button type="submit" name="google_api_clear" value="1"
+                                            class="btn btn-outline-danger"
+                                            onclick="return confirm('{{ _('google_api_clear_confirm') }}');">
+                                        <i class="bi bi-trash"></i> {{ _('google_api_clear_button') }}
+                                    </button>
+                                    {% endif %}
                                 </div>
                             </form>
                         </div>
