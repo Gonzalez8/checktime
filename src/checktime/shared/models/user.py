@@ -40,6 +40,9 @@ class User(UserMixin, db.Model, TimestampMixin):
     # via Telegram. Stored encrypted via checktime.utils.crypto, same as
     # CheckJC passwords.
     google_api_key_encrypted = db.Column("google_api_key", db.String(512), nullable=True)
+    # Which Gemini model to use. NULL falls back to the code default
+    # (gemini-2.5-flash). Updated via the profile dropdown.
+    gemini_model = db.Column(db.String(64), nullable=True)
 
     # Relationships
     holidays = db.relationship('Holiday', backref='user', lazy=True, cascade="all, delete-orphan")

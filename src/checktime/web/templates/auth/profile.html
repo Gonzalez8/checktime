@@ -219,6 +219,12 @@
                                     </div>
                                 </div>
 
+                                <div class="mb-3">
+                                    <label for="gemini_model" class="form-label">{{ _('gemini_model_label') }}</label>
+                                    {{ google_api_form.gemini_model(class="form-select", id="gemini_model") }}
+                                    <div class="form-text">{{ _('gemini_model_help') }}</div>
+                                </div>
+
                                 <div class="alert alert-info">
                                     <h6 class="mb-2"><i class="bi bi-info-circle"></i> {{ _('google_api_how_to_get_title') }}</h6>
                                     <ol class="mb-0">

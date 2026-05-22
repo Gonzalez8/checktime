@@ -379,6 +379,8 @@ EN = {
     'google_api_step2': 'Sign in with a Google account and click "Create API key".',
     'google_api_step3': 'Copy the key and paste it above.',
     'google_api_security_note': 'The key is encrypted at rest (same crypto as your CheckJC password). It is only used to call Gemini to solve the verification captcha — never sent anywhere else.',
+    'gemini_model_label': 'Model',
+    'gemini_model_help': 'Pick the Gemini model used to solve the captcha. gemini-2.5-flash is a good balance of speed and accuracy.',
 }
 
 # Spanish translations
@@ -756,6 +758,8 @@ ES = {
     'google_api_step2': 'Inicia sesión con una cuenta de Google y pulsa "Create API key".',
     'google_api_step3': 'Copia la key y pégala arriba.',
     'google_api_security_note': 'La key se guarda cifrada en la base de datos (mismo cifrado que tu contraseña de CheckJC). Solo se usa para llamar a Gemini y resolver el captcha — nunca se manda a ningún otro sitio.',
+    'gemini_model_label': 'Modelo',
+    'gemini_model_help': 'Elige el modelo de Gemini que se usa para resolver el captcha. gemini-2.5-flash es un buen equilibrio entre velocidad y precisión.',
 }
 
 # Dictionary containing all translations
