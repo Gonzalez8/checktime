@@ -182,7 +182,7 @@
                                 </div>
                                 
                                 <div class="d-grid gap-2 mt-4">
-                                    {{ telegram_form.submit(class="btn btn-primary", name="telegram_submit") }}
+                                    {{ telegram_form.submit(class="btn btn-primary") }}
                                 </div>
                             </form>
                         </div>
@@ -239,7 +239,7 @@
                                 </div>
 
                                 <div class="d-flex gap-2 mt-4">
-                                    {{ google_api_form.submit(class="btn btn-primary", name="google_api_submit") }}
+                                    {{ google_api_form.submit(class="btn btn-primary") }}
                                     {% if google_api_key_set %}
                                     <button type="submit" name="google_api_clear" value="1"
                                             class="btn btn-outline-danger"
