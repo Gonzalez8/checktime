@@ -1,5 +1,7 @@
+import base64
 import logging
 import re
+from typing import Optional
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 
 from checktime.shared.config import (
@@ -46,6 +48,15 @@ class CheckJCUnexpectedResponse(CheckJCError):
     """Respuesta HTTP fuera de lo esperado o navegación a sitio inesperado."""
 
 
+class CheckJCCaptchaFailed(CheckJCError):
+    """No se pudo resolver el captcha de /verification.
+
+    Razones típicas: el usuario no respondió a tiempo por Telegram, el
+    solver devolvió None, o respondió pero el captcha era incorrecto en
+    los dos intentos permitidos.
+    """
+
+
 _CHROME_UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
@@ -66,7 +77,8 @@ class CheckJCClient:
     localizar los inputs y enviar eventos directos.
     """
 
-    def __init__(self, username, password, subdomain):
+    def __init__(self, username, password, subdomain,
+                 captcha_solver=None, user=None, check_type: str = "in"):
         if not username or not password or not subdomain:
             raise ValueError("CheckJC username, password, and subdomain must be provided.")
 
@@ -76,6 +88,13 @@ class CheckJCClient:
         self.base_url = f"https://{subdomain}.checkjc.com"
         self.login_url = f"{self.base_url}/login"
         self.portal_url = f"{self.base_url}/portal/employee"
+        self.verification_url = f"{self.base_url}/portal/employee/verification"
+
+        # Captcha-relay dependencies. Optional so unit tests / simulation
+        # don't need to wire them up.
+        self._captcha_solver = captcha_solver
+        self._user = user
+        self._check_type = check_type
 
         self._pw = None
         self._browser = None
@@ -228,7 +247,143 @@ class CheckJCClient:
             )
 
         logger.info(f"Login successful for {self.username}, landed at {self._page.url}")
+
+        # CheckJC may now serve /portal/employee/verification — a 6-digit
+        # captcha gate added after v7.4. If we end up there, hand it off to
+        # the captcha solver (Telegram human today, LLM tomorrow).
+        if "/verification" in self._page.url:
+            self._solve_verification()
+
         return True
+
+    def _solve_verification(self):
+        """Handle CheckJC's post-login captcha page.
+
+        Strategy (validated end-to-end against production CheckJC):
+        - The 10 keypad buttons each carry a data-value letter that stays
+          stable for the session; only positions shuffle after each click.
+        - Capture the captcha image once + the 10 keypad button images
+          once, OCR the keypad images to build letter -> digit mapping.
+        - Hand the distorted captcha to the solver; receive 6 digits back.
+        - For each digit, look up its letter, re-read the DOM (positions
+          have moved), click that letter's current position.
+        - Submit, verify we landed on /portal/employee. Retry once on
+          /verification reappearing (wrong reply).
+        """
+        from checktime.scheduler.keypad_reader import build_letter_to_digit_map
+
+        if self._captcha_solver is None or self._user is None:
+            raise CheckJCCaptchaFailed(
+                f"CheckJC served /verification for {self.username} but no "
+                f"captcha solver was configured. Check scheduler wiring."
+            )
+
+        max_captcha_attempts = 2
+        for attempt in range(1, max_captcha_attempts + 1):
+            captcha_bytes = self._capture_captcha_image()
+            keypad_buttons = self._capture_keypad_buttons()
+            if not captcha_bytes or len(keypad_buttons) < 10:
+                raise CheckJCFormError(
+                    f"Could not extract captcha image / keypad buttons "
+                    f"for {self.username} on attempt {attempt}. "
+                    f"CheckJC probably changed the verification page HTML."
+                )
+
+            letter_to_digit = build_letter_to_digit_map(
+                (letter, png) for letter, _, _, png in keypad_buttons
+            )
+            digit_to_letter = {d: l for l, d in letter_to_digit.items()}
+            if len(digit_to_letter) < 10:
+                missing = set("0123456789") - set(digit_to_letter)
+                raise CheckJCFormError(
+                    f"Keypad OCR for {self.username} missed digits: {missing}. "
+                    f"Mapping was {letter_to_digit}. Check tesseract install."
+                )
+
+            response = self._captcha_solver.solve(
+                captcha_image_bytes=captcha_bytes,
+                user=self._user,
+                check_type=self._check_type,
+                attempt=attempt,
+            )
+            if not response:
+                raise CheckJCCaptchaFailed(
+                    f"Captcha solver returned no response for {self.username} "
+                    f"on attempt {attempt}. Likely user timeout."
+                )
+
+            response = response.strip()
+            if not re.fullmatch(r"\d{6}", response):
+                logger.warning(
+                    "Captcha reply for %s is not 6 digits (%r); treating as failure",
+                    self.username, response,
+                )
+                if attempt < max_captcha_attempts:
+                    continue
+                raise CheckJCCaptchaFailed(
+                    f"Captcha solver returned malformed reply {response!r} "
+                    f"for {self.username}."
+                )
+
+            # Translate digits -> letters, then click each by re-reading DOM
+            try:
+                sequence = [digit_to_letter[d] for d in response]
+            except KeyError as e:
+                raise CheckJCFormError(
+                    f"Digit {e} not present in keypad mapping for {self.username}"
+                )
+            logger.info(
+                "Submitting captcha for %s (attempt %d): %s -> letters %s",
+                self.username, attempt, response, sequence,
+            )
+            for letter in sequence:
+                pos = self._current_position_of_letter(letter)
+                if pos is None:
+                    raise CheckJCFormError(
+                        f"Letter {letter!r} disappeared from keypad mid-click "
+                        f"for {self.username}"
+                    )
+                self._cdp_click_at(pos)
+
+            submit_pos = self._current_submit_position()
+            if submit_pos is None:
+                raise CheckJCFormError(
+                    f"Submit button not found on verification page for {self.username}"
+                )
+            self._cdp_click_at(submit_pos)
+
+            # Wait for navigation away from /verification
+            try:
+                self._page.wait_for_url(
+                    lambda url: "/verification" not in url,
+                    timeout=10000,
+                )
+            except PWTimeout:
+                pass
+
+            if "/portal/employee" in self._page.url and "/verification" not in self._page.url:
+                logger.info(
+                    "Captcha cleared for %s on attempt %d, landed at %s",
+                    self.username, attempt, self._page.url,
+                )
+                return
+
+            if "/login" in self._page.url:
+                raise CheckJCSessionLost(
+                    f"Lost session after captcha submit for {self.username} "
+                    f"(redirected back to /login)."
+                )
+
+            # Still on /verification: wrong digits. Retry with a new captcha.
+            logger.warning(
+                "Captcha submit didn't clear for %s on attempt %d (url=%s); retrying",
+                self.username, attempt, self._page.url,
+            )
+
+        raise CheckJCCaptchaFailed(
+            f"Captcha verification failed for {self.username} after "
+            f"{max_captcha_attempts} attempts."
+        )
 
     def perform_check(self, check_type: str):
         """Realiza un fichaje (entrada o salida).
@@ -393,6 +548,159 @@ class CheckJCClient:
 
         walk(dom["root"])
         return self._first_visible(candidates)
+
+    # --- captcha helpers ---
+
+    def _cdp_click_at(self, pos):
+        x, y = pos
+        for event_type in ("mousePressed", "mouseReleased"):
+            self._cdp.send("Input.dispatchMouseEvent", {
+                "type": event_type, "x": x, "y": y,
+                "button": "left", "clickCount": 1,
+            })
+        # Small breather: gives CheckJC's JS time to re-shuffle the keypad
+        # before we ask for the next click's coordinates.
+        self._page.wait_for_timeout(120)
+
+    def _capture_captcha_image(self) -> Optional[bytes]:
+        """Return the JPEG bytes of the distorted captcha image, or None."""
+        dom = self._cdp.send("DOM.getDocument", {"depth": -1, "pierce": True})
+        images = []
+
+        def walk(node):
+            name = (node.get("nodeName") or "").lower()
+            attrs = self._attrs(node)
+            if name == "img":
+                src = attrs.get("src", "")
+                if src.startswith("data:image/jpeg;base64,") or (
+                    src.startswith("data:image") and len(src) > 5000
+                ):
+                    images.append(src)
+            for child in (node.get("children") or []):
+                walk(child)
+            for child in (node.get("shadowRoots") or []):
+                walk(child)
+            if node.get("contentDocument"):
+                walk(node["contentDocument"])
+
+        walk(dom["root"])
+        if not images:
+            return None
+        # Captcha is the largest data:image; the rest are tiny keypad PNGs
+        images.sort(key=len, reverse=True)
+        src = images[0]
+        try:
+            _, b64 = src.split(",", 1)
+            return base64.b64decode(b64)
+        except Exception as e:
+            logger.error("Failed to decode captcha image: %s", e)
+            return None
+
+    def _capture_keypad_buttons(self):
+        """Return list of (letter, nodeId, (cx,cy), png_bytes) for each
+        keypad shuffle-button, or empty list on failure.
+
+        The PNG bytes are the image embedded inside each button — used by
+        the keypad OCR to map letter -> digit.
+        """
+        dom = self._cdp.send("DOM.getDocument", {"depth": -1, "pierce": True})
+        out = []
+
+        def find_inner_img_src(node):
+            name = (node.get("nodeName") or "").lower()
+            attrs = self._attrs(node)
+            if name == "img" and attrs.get("src", "").startswith("data:image"):
+                return attrs["src"]
+            for child in (node.get("children") or []):
+                r = find_inner_img_src(child)
+                if r:
+                    return r
+            for child in (node.get("shadowRoots") or []):
+                r = find_inner_img_src(child)
+                if r:
+                    return r
+            return None
+
+        def walk(node):
+            name = (node.get("nodeName") or "").lower()
+            attrs = self._attrs(node)
+            if name == "button":
+                cls = attrs.get("class", "")
+                letter = attrs.get("data-value")
+                if "btn-shuffle" in cls and letter:
+                    try:
+                        box = self._cdp.send("DOM.getBoxModel", {"nodeId": node["nodeId"]})
+                        c = box["model"]["content"]
+                        cx, cy = (c[0] + c[2]) / 2, (c[1] + c[5]) / 2
+                    except Exception:
+                        return
+                    img_src = find_inner_img_src(node)
+                    if not img_src:
+                        return
+                    try:
+                        _, b64 = img_src.split(",", 1)
+                        png_bytes = base64.b64decode(b64)
+                    except Exception:
+                        return
+                    out.append((letter, node["nodeId"], (cx, cy), png_bytes))
+            for child in (node.get("children") or []):
+                walk(child)
+            for child in (node.get("shadowRoots") or []):
+                walk(child)
+            if node.get("contentDocument"):
+                walk(node["contentDocument"])
+
+        walk(dom["root"])
+        return out
+
+    def _current_position_of_letter(self, letter: str):
+        """Re-read the DOM and return the current (cx, cy) of `letter`, or None."""
+        dom = self._cdp.send("DOM.getDocument", {"depth": -1, "pierce": True})
+        result = []
+
+        def walk(node):
+            name = (node.get("nodeName") or "").lower()
+            attrs = self._attrs(node)
+            if name == "button" and attrs.get("data-value") == letter and "btn-shuffle" in attrs.get("class", ""):
+                try:
+                    box = self._cdp.send("DOM.getBoxModel", {"nodeId": node["nodeId"]})
+                    c = box["model"]["content"]
+                    result.append(((c[0] + c[2]) / 2, (c[1] + c[5]) / 2))
+                except Exception:
+                    pass
+            for child in (node.get("children") or []):
+                walk(child)
+            for child in (node.get("shadowRoots") or []):
+                walk(child)
+            if node.get("contentDocument"):
+                walk(node["contentDocument"])
+
+        walk(dom["root"])
+        return result[0] if result else None
+
+    def _current_submit_position(self):
+        dom = self._cdp.send("DOM.getDocument", {"depth": -1, "pierce": True})
+        result = []
+
+        def walk(node):
+            name = (node.get("nodeName") or "").lower()
+            attrs = self._attrs(node)
+            if name == "button" and "btn-success" in attrs.get("class", ""):
+                try:
+                    box = self._cdp.send("DOM.getBoxModel", {"nodeId": node["nodeId"]})
+                    c = box["model"]["content"]
+                    result.append(((c[0] + c[2]) / 2, (c[1] + c[5]) / 2))
+                except Exception:
+                    pass
+            for child in (node.get("children") or []):
+                walk(child)
+            for child in (node.get("shadowRoots") or []):
+                walk(child)
+            if node.get("contentDocument"):
+                walk(node["contentDocument"])
+
+        walk(dom["root"])
+        return result[0] if result else None
 
     def _first_visible(self, node_ids):
         for nid in node_ids:

@@ -13,12 +13,14 @@ import concurrent.futures
 
 from checktime.scheduler.checker import (
     CheckJCClient,
+    CheckJCCaptchaFailed,
     CheckJCIPBlocked,
     CheckJCLoginRejected,
     CheckJCSessionLost,
     CheckJCFormError,
     CheckJCUnexpectedResponse,
 )
+from checktime.scheduler.captcha_solver import TelegramHumanSolver
 from checktime.shared.config import get_log_level, get_user_check_stagger_seconds
 from checktime.utils.telegram import TelegramClient
 from checktime.shared.services.holiday_manager import HolidayManager
@@ -62,6 +64,11 @@ def _format_error_for_telegram(check_type, username, exc):
         )
     if isinstance(exc, CheckJCSessionLost):
         return f"⏳ {base}: sesión perdida durante el fichaje. Reintentará en el próximo ciclo."
+    if isinstance(exc, CheckJCCaptchaFailed):
+        return (
+            f"🧩 {base}: no se pudo resolver el captcha de verificación. "
+            f"Ficha manualmente en checkjc.com."
+        )
     if isinstance(exc, CheckJCFormError):
         return f"🧩 {base}: CheckJC cambió el HTML — los selectores ya no casan. Requiere actualización del checker."
     if isinstance(exc, CheckJCUnexpectedResponse):
@@ -157,7 +164,15 @@ def perform_check_for_user(user, check_type):
     logger.info(f"Starting {check_type} check process for user {user.username}...")
     
     try:
-        with CheckJCClient(username=user.checkjc_username, password=user.checkjc_password, subdomain=user.checkjc_subdomain) as client:
+        captcha_solver = TelegramHumanSolver(telegram_client=telegram_client)
+        with CheckJCClient(
+            username=user.checkjc_username,
+            password=user.checkjc_password,
+            subdomain=user.checkjc_subdomain,
+            captcha_solver=captcha_solver,
+            user=user,
+            check_type=check_type,
+        ) as client:
             client.login()
             if check_type == "in":
                 client.check_in()
