@@ -17,34 +17,98 @@ logger = logging.getLogger(__name__)
 def _apply_lightweight_migrations(app):
     """Add columns that newer code expects but older databases may lack.
 
-    Why: the project relies on db.create_all() which never adds columns to
-    existing tables. Postgres' ADD COLUMN IF NOT EXISTS makes this safe to
-    run on every boot without a real migration tool.
-
-    Each statement runs in its OWN transaction. Postgres aborts a whole
-    transaction on the first error, so sharing one transaction means a
-    single failing ALTER (e.g. on a table that doesn't yet exist) silently
-    skips the rest. Per-statement transactions keep them independent.
+    Strategy: each operation runs in its OWN transaction (so one failure
+    doesn't poison the rest), and column additions are guarded by an
+    information_schema check (so we can log clearly which columns we
+    actually had to add). The double belt-and-braces of
+    "ADD COLUMN IF NOT EXISTS" plus an explicit existence check is
+    deliberate — earlier versions hit a case where IF NOT EXISTS
+    silently failed inside an aborted transaction.
     """
-    statements = [
-        "ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS password_reset_token_hash VARCHAR(128)",
-        "ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS password_reset_token_expires_at TIMESTAMP",
-        # Widen pending_captcha.response from 8 chars (v1.8.0) to 32 (v1.8.1)
-        # since the user now sends 10 keypad digits + 6 captcha digits.
-        "ALTER TABLE pending_captcha ALTER COLUMN response TYPE VARCHAR(32)",
-        # v1.9.0: optional per-user Gemini API key for automatic captcha
-        # solving (encrypted at rest via checktime.utils.crypto).
-        "ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS google_api_key VARCHAR(512)",
-        # v1.9.1: per-user Gemini model selection (NULL = use code default).
-        "ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS gemini_model VARCHAR(64)",
+    # (table, column, type) for every column the current code expects
+    # that older deployments may not have.
+    columns_to_ensure = [
+        ('"user"', 'password_reset_token_hash', 'VARCHAR(128)'),
+        ('"user"', 'password_reset_token_expires_at', 'TIMESTAMP'),
+        ('"user"', 'google_api_key', 'VARCHAR(512)'),
+        ('"user"', 'gemini_model', 'VARCHAR(64)'),
     ]
+    # Type-change statements that aren't safe to retry blindly — they
+    # only matter on older schemas.
+    type_changes = [
+        ('pending_captcha', 'response', 'VARCHAR(32)'),
+    ]
+
     with app.app_context():
-        for stmt in statements:
+        # Log the current user table schema so we can diagnose mismatches.
+        try:
+            with db.engine.begin() as conn:
+                rows = conn.execute(text(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = 'user' ORDER BY ordinal_position"
+                )).fetchall()
+                logger.info(
+                    "Existing user table columns: %s",
+                    [r[0] for r in rows] or "(none)",
+                )
+        except Exception as exc:
+            logger.warning("Could not introspect user table: %s", exc)
+
+        for table, column, type_def in columns_to_ensure:
             try:
                 with db.engine.begin() as conn:
-                    conn.execute(text(stmt))
-            except Exception as exc:  # pragma: no cover - defensive
-                logger.warning("Skipping migration %r: %s", stmt, exc)
+                    exists = conn.execute(
+                        text(
+                            "SELECT 1 FROM information_schema.columns "
+                            "WHERE table_name = :t AND column_name = :c"
+                        ),
+                        {"t": table.strip('"'), "c": column},
+                    ).fetchone()
+                    if exists:
+                        continue
+                    conn.execute(
+                        text(f'ALTER TABLE {table} ADD COLUMN {column} {type_def}')
+                    )
+                    logger.info("Migration: added %s.%s %s", table, column, type_def)
+            except Exception as exc:
+                logger.warning(
+                    "Migration failed for %s.%s: %s", table, column, exc,
+                )
+
+        for table, column, new_type in type_changes:
+            try:
+                with db.engine.begin() as conn:
+                    # Only widen if the existing column is narrower than expected.
+                    row = conn.execute(
+                        text(
+                            "SELECT character_maximum_length "
+                            "FROM information_schema.columns "
+                            "WHERE table_name = :t AND column_name = :c"
+                        ),
+                        {"t": table, "c": column},
+                    ).fetchone()
+                    if row is None:
+                        # Column doesn't exist yet (table itself missing or
+                        # column missing). create_all() handles fresh tables.
+                        continue
+                    # Extract numeric size from "VARCHAR(N)"
+                    import re as _re
+                    m = _re.search(r"\((\d+)\)", new_type)
+                    target = int(m.group(1)) if m else None
+                    current = row[0]
+                    if target is None or current is None or current >= target:
+                        continue
+                    conn.execute(
+                        text(f'ALTER TABLE {table} ALTER COLUMN {column} TYPE {new_type}')
+                    )
+                    logger.info(
+                        "Migration: widened %s.%s from %s to %s",
+                        table, column, current, target,
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "Type change failed for %s.%s: %s", table, column, exc,
+                )
 
 login_manager = LoginManager()
 
