@@ -24,6 +24,9 @@ def _apply_lightweight_migrations(app):
     statements = [
         "ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS password_reset_token_hash VARCHAR(128)",
         "ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS password_reset_token_expires_at TIMESTAMP",
+        # Widen pending_captcha.response from 8 chars (v1.8.0) to 32 (v1.8.1)
+        # since the user now sends 10 keypad digits + 6 captcha digits.
+        "ALTER TABLE pending_captcha ALTER COLUMN response TYPE VARCHAR(32)",
     ]
     with app.app_context():
         with db.engine.begin() as conn:

@@ -1,4 +1,4 @@
-# Captcha relay (mayo 2026, v1.8.0)
+# Captcha relay (mayo 2026, v1.8.0 → v1.8.1)
 
 ## TL;DR
 
@@ -7,10 +7,29 @@ un captcha de 6 dígitos distorsionados + teclado en pantalla que **se
 baraja después de cada click**.
 
 El scheduler no puede ya fichar solo. Implementamos un **captcha-relay
-humano vía Telegram**: el scheduler manda la imagen al usuario por
-Telegram, espera los 6 dígitos, los introduce y submitea. Diseñado
-con un punto de extensión claro para que en v1.9+ una IA con visión
-(LLM) resuelva el captcha sin intervención humana.
+humano vía Telegram**: el scheduler manda al usuario una imagen
+compuesta (captcha + teclado etiquetado 1→10), recibe **16 dígitos
+en una sola respuesta** (los 10 del teclado + los 6 del captcha), los
+introduce y submitea. Diseñado con un punto de extensión claro para
+que en v1.9+ una IA con visión (LLM) resuelva el captcha sin
+intervención humana — la misma interfaz `CaptchaSolver.solve()` sirve
+para ambos.
+
+## Por qué 16 dígitos y no solo 6
+
+v1.8.0 intentó usar Tesseract OCR sobre las 10 imágenes limpias del
+teclado para construir el mapping `letra → dígito` automáticamente,
+y solo pedir 6 dígitos al usuario. Producción mostró que Tesseract
+**confunde sistemáticamente 1 con 7** en este captcha, lo que genera
+mappings con duplicados/faltas y rompe el flujo. Sin un modelo de
+visión real, no es fiable.
+
+v1.8.1 elimina Tesseract: el usuario lee los 10 dígitos del teclado
+en orden (1→10 etiquetados en la imagen que recibe) y los 6 del
+captcha, todo en una sola línea de 16 dígitos. Es +10 caracteres de
+fricción a cambio de 100% de fiabilidad. Cuando se implemente el
+`LLMVisionSolver`, esos 10 dígitos extra los lee el LLM y la fricción
+para el usuario desaparece.
 
 ## Lo que se descubrió
 

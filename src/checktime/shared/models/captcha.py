@@ -31,7 +31,8 @@ class PendingCaptcha(db.Model, TimestampMixin):
     check_type = db.Column(db.String(8), nullable=False)  # 'in' or 'out'
     state = db.Column(db.String(16), nullable=False, default=STATE_WAITING, index=True)
     captcha_image = db.Column(db.LargeBinary, nullable=True)
-    response = db.Column(db.String(8), nullable=True)
+    # Up to 16 digits: 10 keypad positions + 6 captcha
+    response = db.Column(db.String(32), nullable=True)
     attempt = db.Column(db.Integer, nullable=False, default=1)
     expires_at = db.Column(db.DateTime, nullable=False)
 
