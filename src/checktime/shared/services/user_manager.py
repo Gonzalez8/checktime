@@ -347,6 +347,23 @@ class UserManager:
             logger.error(f"Error issuing admin temporary password: {e}")
             return None, None
 
+    def set_google_api_key(self, user_id: int, api_key: Optional[str]) -> Optional[User]:
+        """Save (encrypted) or clear the user's Google Gemini API key."""
+        try:
+            user = self.repository.get_by_id(user_id)
+            if user is None:
+                return None
+            user.set_google_api_key(api_key or None)
+            self.repository.update(user)
+            if api_key:
+                logger.info(f"Stored Google API key for user {user.username}")
+            else:
+                logger.info(f"Cleared Google API key for user {user.username}")
+            return user
+        except Exception as e:
+            logger.error(f"Error setting Google API key: {e}")
+            return None
+
     def set_telegram_settings(self, user_id: int, chat_id: str, enabled: bool = True) -> Optional[User]:
         """
         Set the Telegram settings for a user.

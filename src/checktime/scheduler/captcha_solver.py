@@ -48,6 +48,91 @@ logger = logging.getLogger(__name__)
 KeypadEntry = Tuple[str, bytes]
 
 
+def compose_captcha_image(captcha_bytes: bytes, keypad: List[KeypadEntry]) -> bytes:
+    """Stack the captcha on top, then a labeled strip of the 10 keypad PNGs.
+
+    Returns a PNG. Used by both TelegramHumanSolver (to ship to the user)
+    and LLMVisionSolver (to ship to Gemini).
+    """
+    from PIL import Image, ImageDraw, ImageFont
+
+    captcha = Image.open(io.BytesIO(captcha_bytes)).convert("RGB")
+    button_imgs = [Image.open(io.BytesIO(png)).convert("RGBA") for _, png in keypad]
+
+    target_w = 640
+    scale = target_w / captcha.width
+    captcha_w = target_w
+    captcha_h = int(captcha.height * scale)
+    captcha = captcha.resize((captcha_w, captcha_h))
+
+    btn_h = 60
+    btn_scale = btn_h / button_imgs[0].height
+    btn_w = int(button_imgs[0].width * btn_scale)
+    gap = 14
+    strip_w = btn_w * 10 + gap * 9 + 20
+    label_h = 26
+    strip_h = label_h + btn_h + 10
+
+    total_w = max(captcha_w, strip_w) + 20
+    total_h = captcha_h + 30 + strip_h + 20
+    canvas = Image.new("RGB", (total_w, total_h), (245, 245, 245))
+
+    cx = (total_w - captcha_w) // 2
+    canvas.paste(captcha, (cx, 10))
+
+    strip_x0 = (total_w - strip_w) // 2 + 10
+    strip_y0 = captcha_h + 30
+    try:
+        font = ImageFont.truetype(
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 18
+        )
+    except Exception:
+        font = ImageFont.load_default()
+    draw = ImageDraw.Draw(canvas)
+    for i, bimg in enumerate(button_imgs):
+        x = strip_x0 + i * (btn_w + gap)
+        draw.text((x + btn_w // 2 - 6, strip_y0), f"{i+1}", fill=(40, 40, 40), font=font)
+        bw = bimg.resize((btn_w, btn_h))
+        bg = Image.new("RGB", (btn_w, btn_h), (255, 255, 255))
+        bg.paste(bw, (0, 0), mask=bw.split()[3] if bw.mode == "RGBA" else None)
+        canvas.paste(bg, (x, strip_y0 + label_h))
+
+    buf = io.BytesIO()
+    canvas.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def translate_16_digits_to_letters(raw: str, keypad: List[KeypadEntry]) -> Optional[List[str]]:
+    """Turn "<10 keypad digits><6 captcha digits>" into 6 letters to click.
+
+    Returns None on malformed input. Shared by both solvers — humans and
+    LLMs both produce the same 16-digit string.
+    """
+    digits = ''.join(ch for ch in raw if ch.isdigit())
+    if len(digits) != 16:
+        logger.warning(
+            "Captcha reply does not contain 16 digits (got %d): %r", len(digits), digits,
+        )
+        return None
+
+    keypad_digits = digits[:10]
+    captcha_digits = digits[10:]
+
+    if len(set(keypad_digits)) != 10:
+        logger.warning("Keypad digits not unique: %s", keypad_digits)
+        return None
+
+    digit_to_letter = {}
+    for (letter, _), digit in zip(keypad, keypad_digits):
+        digit_to_letter[digit] = letter
+
+    try:
+        return [digit_to_letter[d] for d in captcha_digits]
+    except KeyError as e:
+        logger.warning("Captcha digit %s not present in keypad", e)
+        return None
+
+
 class CaptchaSolver(ABC):
     """
     Abstract solver for CheckJC's verification page.
@@ -136,7 +221,7 @@ class TelegramHumanSolver(CaptchaSolver):
             return None
 
         # Compose: captcha on top, keypad strip below, all in a single PNG.
-        composite_png = self._compose_image(captcha_image_bytes, keypad)
+        composite_png = compose_captcha_image(captcha_image_bytes, keypad)
 
         # Persist the pending row with the composite image so the user can
         # always re-fetch it if needed (we store what we actually sent).
@@ -172,16 +257,9 @@ class TelegramHumanSolver(CaptchaSolver):
         if raw is None:
             return None
 
-        return self._translate(raw, keypad, user)
-
-    def _translate(self, raw: str, keypad: List[KeypadEntry], user: User) -> Optional[List[str]]:
-        """Turn "<10 keypad digits><6 captcha digits>" into 6 letters to click."""
-        digits = ''.join(ch for ch in raw if ch.isdigit())
-        if len(digits) != 16:
-            logger.warning(
-                "Captcha reply for user %s does not contain 16 digits (got %d): %r",
-                user.username, len(digits), digits,
-            )
+        sequence = translate_16_digits_to_letters(raw, keypad)
+        if sequence is None:
+            # The user typed something we couldn't parse — tell them.
             try:
                 self.telegram.send_message(
                     "Necesito *16 dígitos* en total: los 10 del teclado y los 6 del captcha. "
@@ -191,92 +269,7 @@ class TelegramHumanSolver(CaptchaSolver):
                 )
             except Exception:
                 pass
-            return None
-
-        keypad_digits = digits[:10]
-        captcha_digits = digits[10:]
-
-        # Each keypad digit must be unique (one per 0-9) — sanity check
-        if len(set(keypad_digits)) != 10:
-            logger.warning(
-                "Keypad digits not unique for user %s: %s", user.username, keypad_digits,
-            )
-            return None
-
-        # Build digit -> letter using the keypad order we sent
-        digit_to_letter = {}
-        for (letter, _), digit in zip(keypad, keypad_digits):
-            digit_to_letter[digit] = letter
-
-        try:
-            sequence = [digit_to_letter[d] for d in captcha_digits]
-        except KeyError as e:
-            logger.warning("Captcha digit %s not present in keypad for user %s", e, user.username)
-            return None
-        logger.info(
-            "Translated captcha for user %s: %s via keypad %s -> %s",
-            user.username, captcha_digits, keypad_digits, sequence,
-        )
         return sequence
-
-    def _compose_image(self, captcha_bytes: bytes, keypad: List[KeypadEntry]) -> bytes:
-        """Stack the captcha on top, then a labeled strip of the 10 keypad PNGs.
-
-        Returns a PNG of the composite. PIL handles JPEG/PNG inputs.
-        """
-        from PIL import Image, ImageDraw, ImageFont
-
-        captcha = Image.open(io.BytesIO(captcha_bytes)).convert("RGB")
-        button_imgs = [Image.open(io.BytesIO(png)).convert("RGBA") for _, png in keypad]
-
-        # Captcha gets scaled to a comfortable width (640).
-        target_w = 640
-        scale = target_w / captcha.width
-        captcha_w = target_w
-        captcha_h = int(captcha.height * scale)
-        captcha = captcha.resize((captcha_w, captcha_h))
-
-        # Each button: 100 wide max, keeping aspect. They're tiny (~55x33).
-        btn_h = 60
-        btn_scale = btn_h / button_imgs[0].height
-        btn_w = int(button_imgs[0].width * btn_scale)
-        gap = 14
-        strip_w = btn_w * 10 + gap * 9 + 20  # 10 buttons with gaps + padding
-        # Add room for a "1.." index label above each button (font 18)
-        label_h = 26
-        strip_h = label_h + btn_h + 10
-
-        total_w = max(captcha_w, strip_w) + 20
-        total_h = captcha_h + 30 + strip_h + 20
-        canvas = Image.new("RGB", (total_w, total_h), (245, 245, 245))
-
-        # Captcha centered horizontally
-        cx = (total_w - captcha_w) // 2
-        canvas.paste(captcha, (cx, 10))
-
-        # Keypad strip below, with index labels 1..10
-        strip_x0 = (total_w - strip_w) // 2 + 10
-        strip_y0 = captcha_h + 30
-        try:
-            font = ImageFont.truetype(
-                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 18
-            )
-        except Exception:
-            font = ImageFont.load_default()
-        draw = ImageDraw.Draw(canvas)
-        for i, bimg in enumerate(button_imgs):
-            x = strip_x0 + i * (btn_w + gap)
-            # Index label
-            draw.text((x + btn_w // 2 - 6, strip_y0), f"{i+1}", fill=(40, 40, 40), font=font)
-            # Composite button on white background and paste
-            bw = bimg.resize((btn_w, btn_h))
-            bg = Image.new("RGB", (btn_w, btn_h), (255, 255, 255))
-            bg.paste(bw, (0, 0), mask=bw.split()[3] if bw.mode == "RGBA" else None)
-            canvas.paste(bg, (x, strip_y0 + label_h))
-
-        buf = io.BytesIO()
-        canvas.save(buf, format="PNG")
-        return buf.getvalue()
 
     def _wait_for_response(
         self,
@@ -344,26 +337,46 @@ class TelegramHumanSolver(CaptchaSolver):
 
 class LLMVisionSolver(CaptchaSolver):
     """
-    Placeholder for a future solver that asks an LLM with vision to read
-    the distorted captcha.
+    Solver that asks Google Gemini to read the captcha automatically.
 
-    Not wired up yet: instantiating it raises NotImplementedError on solve().
-    Plug in a real implementation in v1.9+ — the rest of the code only
-    depends on the abstract CaptchaSolver contract.
+    Builds the same composite image (captcha + labelled 1..10 keypad)
+    that the human solver sees, sends it to Gemini via the public REST
+    API with a tight prompt, and expects back a single line of 16
+    digits — same format the human would type. Then translates the 16
+    digits to the 6-letter click sequence using the same helper as the
+    Telegram solver.
 
-    Suggested implementation when picking this up:
-    - Accept an Anthropic / OpenAI / Gemini client in the constructor.
-    - Encode captcha_image_bytes as base64 and send with a tight prompt
-      ("Reply ONLY with the 6 digits visible. No other text.").
-    - Validate the response is 6 numeric chars; retry once if not.
-    - Optionally fall back to TelegramHumanSolver on ambiguous responses.
+    Falls back to None on any failure (HTTP error, malformed reply,
+    timeout). The caller can chain this with TelegramHumanSolver as a
+    fallback so a flaky Gemini call doesn't break a fichaje.
+
+    The API key comes from each user's profile (User.google_api_key,
+    encrypted at rest). The HTTP endpoint is the public Google AI
+    Studio one — no Vertex/GCP project setup required.
     """
 
-    def __init__(self, *args, **kwargs):
-        # Keep constructor signature flexible; concrete impls will define
-        # what client/credentials they need.
-        self._args = args
-        self._kwargs = kwargs
+    DEFAULT_MODEL = "gemini-2.0-flash"
+    ENDPOINT_TMPL = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        "{model}:generateContent?key={key}"
+    )
+    PROMPT = (
+        "You are reading a CheckJC verification page. The image has TWO "
+        "parts stacked vertically:\n"
+        "1. TOP: a distorted captcha with EXACTLY 6 digits.\n"
+        "2. BOTTOM: a strip of 10 small clean buttons labelled 1..10 "
+        "left to right. Each button shows ONE digit (0-9), each digit "
+        "appearing exactly once across the 10 buttons.\n\n"
+        "Reply with EXACTLY 16 digits and NOTHING else:\n"
+        "- First the 10 keypad digits in order 1..10.\n"
+        "- Then the 6 captcha digits in reading order.\n\n"
+        "Do not add spaces, punctuation, words, or markdown. Just the "
+        "16 raw digits."
+    )
+
+    def __init__(self, model: Optional[str] = None, http_timeout: int = 30):
+        self.model = model or self.DEFAULT_MODEL
+        self.http_timeout = http_timeout
 
     def solve(
         self,
@@ -374,11 +387,125 @@ class LLMVisionSolver(CaptchaSolver):
         attempt: int = 1,
         timeout_seconds: int = 300,
     ) -> Optional[List[str]]:
-        raise NotImplementedError(
-            "LLMVisionSolver is a placeholder. Wire up an LLM client and "
-            "implement the vision call before using it. The LLM should "
-            "read both the captcha and the 10 keypad digit images, and "
-            "return the 6-letter click sequence."
+        api_key = getattr(user, "google_api_key", None)
+        if not api_key:
+            logger.info(
+                "User %s has no Google API key configured; LLM solver cannot run",
+                user.username,
+            )
+            return None
+        if len(keypad) != 10:
+            logger.error(
+                "LLMVisionSolver: expected 10 keypad buttons, got %d", len(keypad),
+            )
+            return None
+
+        composite_png = compose_captcha_image(captcha_image_bytes, keypad)
+        raw = self._ask_gemini(composite_png, api_key, user)
+        if raw is None:
+            return None
+        sequence = translate_16_digits_to_letters(raw, keypad)
+        if sequence is None:
+            logger.warning(
+                "Gemini reply did not parse to 16 valid digits for %s (raw=%r)",
+                user.username, raw,
+            )
+            return None
+        logger.info(
+            "LLM solved captcha for user %s on attempt %d via %s",
+            user.username, attempt, self.model,
+        )
+        return sequence
+
+    def _ask_gemini(self, composite_png: bytes, api_key: str, user: User) -> Optional[str]:
+        """Single Gemini call. Returns the raw text reply, or None on failure."""
+        import base64 as _b64
+        import requests
+
+        url = self.ENDPOINT_TMPL.format(model=self.model, key=api_key)
+        body = {
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [
+                        {"text": self.PROMPT},
+                        {
+                            "inline_data": {
+                                "mime_type": "image/png",
+                                "data": _b64.b64encode(composite_png).decode("ascii"),
+                            }
+                        },
+                    ],
+                }
+            ],
+            "generationConfig": {
+                "temperature": 0,
+                "maxOutputTokens": 32,
+                "candidateCount": 1,
+            },
+        }
+        try:
+            resp = requests.post(url, json=body, timeout=self.http_timeout)
+        except Exception as exc:
+            logger.warning("Gemini HTTP call failed for user %s: %s", user.username, exc)
+            return None
+        if resp.status_code != 200:
+            logger.warning(
+                "Gemini returned %d for user %s: %s",
+                resp.status_code, user.username, resp.text[:200],
+            )
+            return None
+        try:
+            data = resp.json()
+            candidates = data.get("candidates") or []
+            if not candidates:
+                logger.warning("Gemini returned no candidates for user %s: %s",
+                               user.username, data)
+                return None
+            parts = candidates[0].get("content", {}).get("parts") or []
+            text = "".join(p.get("text", "") for p in parts).strip()
+            return text or None
+        except Exception as exc:
+            logger.warning("Failed to parse Gemini response for %s: %s", user.username, exc)
+            return None
+
+
+class HybridCaptchaSolver(CaptchaSolver):
+    """
+    Try the LLM first; if it returns None, fall back to the Telegram
+    human solver.
+
+    This is what the scheduler wires in by default: users with an API
+    key get automatic resolution, users without one fall through to the
+    Telegram flow, and if Gemini is flaky / over quota the user still
+    gets a Telegram prompt as a safety net.
+    """
+
+    def __init__(self, llm: "LLMVisionSolver", telegram: "TelegramHumanSolver"):
+        self.llm = llm
+        self.telegram = telegram
+
+    def solve(
+        self,
+        captcha_image_bytes: bytes,
+        keypad: List[KeypadEntry],
+        user: User,
+        check_type: str,
+        attempt: int = 1,
+        timeout_seconds: int = 300,
+    ) -> Optional[List[str]]:
+        if getattr(user, "google_api_key", None):
+            sequence = self.llm.solve(
+                captcha_image_bytes, keypad, user, check_type, attempt, timeout_seconds,
+            )
+            if sequence is not None:
+                return sequence
+            logger.info(
+                "LLM solver failed for user %s; falling back to Telegram human",
+                user.username,
+            )
+        return self.telegram.solve(
+            captcha_image_bytes, keypad, user, check_type, attempt, timeout_seconds,
         )
 
 

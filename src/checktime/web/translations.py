@@ -360,6 +360,25 @@ EN = {
     'admin_delete_self_blocked': 'You cannot delete your own account.',
     'admin_delete_last_admin_blocked': 'You cannot delete the last admin user.',
     'is_admin': 'Admin',
+
+    # Google Gemini API key
+    'google_api_config': 'Google API Key',
+    'google_api_explanation': 'Optional. If you provide a Google Gemini API key, CheckTime will use it to solve the CheckJC verification captcha automatically. If you leave it empty (or the LLM call fails), CheckTime falls back to asking you for the digits via Telegram, which is the default behaviour.',
+    'google_api_key': 'Google API Key',
+    'google_api_key_placeholder': 'AIzaSy...',
+    'google_api_key_currently_set': 'An API key is currently configured.',
+    'google_api_key_not_set': 'No API key configured. Telegram fallback will be used.',
+    'google_api_key_leave_empty': 'Leave empty to keep the current key.',
+    'google_api_key_saved': 'Google API key saved.',
+    'google_api_key_cleared': 'Google API key removed. Telegram fallback will be used.',
+    'google_api_key_unchanged': 'Field was empty: kept the current API key.',
+    'google_api_clear_button': 'Remove API key',
+    'google_api_clear_confirm': 'Remove the saved Google API key? Telegram fallback will be used from now on.',
+    'google_api_how_to_get_title': 'How to get a Google Gemini API key',
+    'google_api_step1': 'Open',
+    'google_api_step2': 'Sign in with a Google account and click "Create API key".',
+    'google_api_step3': 'Copy the key and paste it above.',
+    'google_api_security_note': 'The key is encrypted at rest (same crypto as your CheckJC password). It is only used to call Gemini to solve the verification captcha — never sent anywhere else.',
 }
 
 # Spanish translations
@@ -718,6 +737,25 @@ ES = {
     'admin_delete_self_blocked': 'No puedes eliminar tu propia cuenta.',
     'admin_delete_last_admin_blocked': 'No puedes eliminar al último administrador.',
     'is_admin': 'Admin',
+
+    # Google Gemini API key
+    'google_api_config': 'API Key de Google',
+    'google_api_explanation': 'Opcional. Si configuras una API key de Google Gemini, CheckTime la usará para resolver automáticamente el captcha de verificación de CheckJC. Si la dejas vacía (o la llamada al LLM falla), CheckTime vuelve a pedirte los dígitos por Telegram, que es el comportamiento por defecto.',
+    'google_api_key': 'API Key de Google',
+    'google_api_key_placeholder': 'AIzaSy...',
+    'google_api_key_currently_set': 'Hay una API key configurada.',
+    'google_api_key_not_set': 'Sin API key configurada. Se usará el fallback por Telegram.',
+    'google_api_key_leave_empty': 'Deja vacío para mantener la actual.',
+    'google_api_key_saved': 'API key de Google guardada.',
+    'google_api_key_cleared': 'API key de Google eliminada. Se usará el fallback por Telegram.',
+    'google_api_key_unchanged': 'Campo vacío: se mantiene la API key actual.',
+    'google_api_clear_button': 'Eliminar API key',
+    'google_api_clear_confirm': '¿Eliminar la API key de Google guardada? A partir de ahora se usará el fallback por Telegram.',
+    'google_api_how_to_get_title': 'Cómo obtener una API key de Google Gemini',
+    'google_api_step1': 'Abre',
+    'google_api_step2': 'Inicia sesión con una cuenta de Google y pulsa "Create API key".',
+    'google_api_step3': 'Copia la key y pégala arriba.',
+    'google_api_security_note': 'La key se guarda cifrada en la base de datos (mismo cifrado que tu contraseña de CheckJC). Solo se usa para llamar a Gemini y resolver el captcha — nunca se manda a ningún otro sitio.',
 }
 
 # Dictionary containing all translations
