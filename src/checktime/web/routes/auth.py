@@ -3,9 +3,10 @@ import logging
 from flask import Blueprint, render_template, redirect, url_for, flash, request, session
 from flask_login import login_user, logout_user, login_required, current_user
 from flask_wtf import FlaskForm
-from wtforms import StringField, PasswordField, BooleanField, SubmitField
+from wtforms import StringField, PasswordField, BooleanField, SubmitField, SelectField
 from wtforms.validators import DataRequired, Email, EqualTo, ValidationError, Optional, Length
 
+from checktime.scheduler.captcha_solver import LLMVisionSolver
 from checktime.shared.services.user_manager import UserManager
 from checktime.utils.telegram import TelegramClient
 from checktime.web.translations import get_translation
@@ -96,6 +97,12 @@ class TelegramSettingsForm(FlaskForm):
 
 class GoogleApiKeyForm(FlaskForm):
     google_api_key = PasswordField('Google API Key', validators=[Optional()])
+    gemini_model = SelectField(
+        'Gemini Model',
+        choices=[(m, m) for m in LLMVisionSolver.SUPPORTED_MODELS],
+        default=LLMVisionSolver.DEFAULT_MODEL,
+        validators=[Optional()],
+    )
     submit = SubmitField('Save Google API Key')
 
 class ForgotPasswordForm(FlaskForm):
@@ -307,12 +314,17 @@ def profile():
             user_manager.set_google_api_key(current_user.id, None)
             flash(get_translation('google_api_key_cleared', get_language()), 'success')
         else:
+            # Always persist the model selection (cheap, idempotent).
+            selected_model = (google_api_form.gemini_model.data or "").strip()
+            if selected_model in LLMVisionSolver.SUPPORTED_MODELS:
+                user_manager.set_gemini_model(current_user.id, selected_model)
+
             new_key = (google_api_form.google_api_key.data or "").strip()
             if new_key:
                 user_manager.set_google_api_key(current_user.id, new_key)
                 flash(get_translation('google_api_key_saved', get_language()), 'success')
             else:
-                # Empty submit without explicit clear: keep current key
+                # Empty key field: just updated the model preference.
                 flash(get_translation('google_api_key_unchanged', get_language()), 'info')
         return redirect(url_for('auth.profile') + '#google-api-config')
 
@@ -325,6 +337,11 @@ def profile():
         # Pre-fill Telegram form with current values
         telegram_form.telegram_chat_id.data = current_user.telegram_chat_id
         telegram_form.telegram_notifications_enabled.data = current_user.telegram_notifications_enabled
+
+        # Pre-select the Gemini model in the dropdown (NULL → default)
+        google_api_form.gemini_model.data = (
+            current_user.gemini_model or LLMVisionSolver.DEFAULT_MODEL
+        )
 
     return render_template(
         'auth/profile.html',

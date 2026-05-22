@@ -355,7 +355,17 @@ class LLMVisionSolver(CaptchaSolver):
     Studio one — no Vertex/GCP project setup required.
     """
 
-    DEFAULT_MODEL = "gemini-2.0-flash"
+    DEFAULT_MODEL = "gemini-2.5-flash"
+
+    # Models we explicitly support / show in the user profile dropdown.
+    # `gemini-2.0-flash` is legacy (only available for existing projects
+    # as of March 2026) but kept here for users who already configured it.
+    SUPPORTED_MODELS = [
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+        "gemini-2.5-flash-lite",
+        "gemini-2.0-flash",
+    ]
     ENDPOINT_TMPL = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
         "{model}:generateContent?key={key}"
@@ -400,8 +410,10 @@ class LLMVisionSolver(CaptchaSolver):
             )
             return None
 
+        # Per-user model preference wins over the solver-level default.
+        model = getattr(user, "gemini_model", None) or self.model
         composite_png = compose_captcha_image(captcha_image_bytes, keypad)
-        raw = self._ask_gemini(composite_png, api_key, user)
+        raw = self._ask_gemini(composite_png, api_key, model, user)
         if raw is None:
             return None
         sequence = translate_16_digits_to_letters(raw, keypad)
@@ -413,16 +425,16 @@ class LLMVisionSolver(CaptchaSolver):
             return None
         logger.info(
             "LLM solved captcha for user %s on attempt %d via %s",
-            user.username, attempt, self.model,
+            user.username, attempt, model,
         )
         return sequence
 
-    def _ask_gemini(self, composite_png: bytes, api_key: str, user: User) -> Optional[str]:
+    def _ask_gemini(self, composite_png: bytes, api_key: str, model: str, user: User) -> Optional[str]:
         """Single Gemini call. Returns the raw text reply, or None on failure."""
         import base64 as _b64
         import requests
 
-        url = self.ENDPOINT_TMPL.format(model=self.model, key=api_key)
+        url = self.ENDPOINT_TMPL.format(model=model, key=api_key)
         body = {
             "contents": [
                 {

@@ -20,6 +20,11 @@ def _apply_lightweight_migrations(app):
     Why: the project relies on db.create_all() which never adds columns to
     existing tables. Postgres' ADD COLUMN IF NOT EXISTS makes this safe to
     run on every boot without a real migration tool.
+
+    Each statement runs in its OWN transaction. Postgres aborts a whole
+    transaction on the first error, so sharing one transaction means a
+    single failing ALTER (e.g. on a table that doesn't yet exist) silently
+    skips the rest. Per-statement transactions keep them independent.
     """
     statements = [
         "ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS password_reset_token_hash VARCHAR(128)",
@@ -30,14 +35,16 @@ def _apply_lightweight_migrations(app):
         # v1.9.0: optional per-user Gemini API key for automatic captcha
         # solving (encrypted at rest via checktime.utils.crypto).
         "ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS google_api_key VARCHAR(512)",
+        # v1.9.1: per-user Gemini model selection (NULL = use code default).
+        "ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS gemini_model VARCHAR(64)",
     ]
     with app.app_context():
-        with db.engine.begin() as conn:
-            for stmt in statements:
-                try:
+        for stmt in statements:
+            try:
+                with db.engine.begin() as conn:
                     conn.execute(text(stmt))
-                except Exception as exc:  # pragma: no cover - defensive
-                    logger.warning("Skipping migration %r: %s", stmt, exc)
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning("Skipping migration %r: %s", stmt, exc)
 
 login_manager = LoginManager()
 

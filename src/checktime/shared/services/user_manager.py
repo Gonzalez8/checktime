@@ -364,6 +364,20 @@ class UserManager:
             logger.error(f"Error setting Google API key: {e}")
             return None
 
+    def set_gemini_model(self, user_id: int, model: Optional[str]) -> Optional[User]:
+        """Save the user's preferred Gemini model (or None to use default)."""
+        try:
+            user = self.repository.get_by_id(user_id)
+            if user is None:
+                return None
+            user.gemini_model = (model or None) or None
+            self.repository.update(user)
+            logger.info(f"Set gemini_model={model!r} for user {user.username}")
+            return user
+        except Exception as e:
+            logger.error(f"Error setting Gemini model: {e}")
+            return None
+
     def set_telegram_settings(self, user_id: int, chat_id: str, enabled: bool = True) -> Optional[User]:
         """
         Set the Telegram settings for a user.
