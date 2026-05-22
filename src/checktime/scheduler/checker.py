@@ -216,35 +216,78 @@ class CheckJCClient:
             f"pass_nodeId={pass_node}, btn_nodeId={btn_node}"
         )
 
-        # Rellenar inputs.
-        self._cdp_focus(user_node)
-        self._cdp.send("Input.insertText", {"text": self.username})
-        self._cdp_focus(pass_node)
-        self._cdp.send("Input.insertText", {"text": self.password})
+        # Submit loop. Stencil sometimes hydrates the form's hidden CSRF
+        # token *after* the visible inputs become interactable — if we
+        # click too early, CheckJC silently rejects the POST and we get
+        # bounced back to /login. So: on a small body (lite variant) we
+        # wait extra before clicking, and on rejection we reload and try
+        # one more time with a longer warm-up.
+        max_submit_attempts = 2
+        for submit_attempt in range(1, max_submit_attempts + 1):
+            if last_body_size is not None and last_body_size < _LITE_BODY_THRESHOLD:
+                extra_wait_ms = 3000 if submit_attempt == 1 else 6000
+                logger.info(
+                    "Body is small (%d bytes); waiting %dms extra for Stencil "
+                    "to hydrate the form token before submitting (attempt %d/%d)",
+                    last_body_size, extra_wait_ms, submit_attempt, max_submit_attempts,
+                )
+                self._page.wait_for_timeout(extra_wait_ms)
 
-        # Click sobre el botón en sus coordenadas reales (Input.dispatchMouseEvent).
-        self._cdp_click(btn_node)
-        logger.info(f"Login button clicked for {self.username}")
+            # Rellenar inputs.
+            self._cdp_focus(user_node)
+            self._cdp.send("Input.insertText", {"text": self.username})
+            self._cdp_focus(pass_node)
+            self._cdp.send("Input.insertText", {"text": self.password})
 
-        # Esperar a que el navegador salga de /login. Si tras N seg seguimos
-        # ahí, fue rechazo (el server muestra el form de login otra vez).
-        try:
-            self._page.wait_for_url(
-                lambda url: "/login" not in url, timeout=15000
+            # Click sobre el botón en sus coordenadas reales.
+            self._cdp_click(btn_node)
+            logger.info(
+                "Login button clicked for %s (submit attempt %d/%d)",
+                self.username, submit_attempt, max_submit_attempts,
             )
-        except PWTimeout:
-            # ¿Llegó banner de IP bloqueada tras el intento?
+
+            # Esperar a que el navegador salga de /login. Si tras N seg
+            # seguimos ahí, fue rechazo (el server muestra /login otra vez).
+            try:
+                self._page.wait_for_url(
+                    lambda url: "/login" not in url, timeout=15000
+                )
+                break  # navigated away → login OK
+            except PWTimeout:
+                pass
+
+            # Still on /login. IP block banner?
             mins = self._ip_block_minutes(self._page.content())
             if mins is not None:
                 raise CheckJCIPBlocked(
                     f"CheckJC blocked this IP after failed attempts for {self.username}. "
                     f"Retry available in {mins} minutes (per server)."
                 )
-            raise CheckJCLoginRejected(
-                f"CheckJC rejected the login for {self.username}: "
-                f"still at {self._page.url!r} after submit. "
-                f"Check if the user can log in via the web."
+
+            if submit_attempt >= max_submit_attempts:
+                raise CheckJCLoginRejected(
+                    f"CheckJC rejected the login for {self.username} "
+                    f"after {max_submit_attempts} attempts: still at "
+                    f"{self._page.url!r} after submit. "
+                    f"Check if the user can log in via the web."
+                )
+
+            # Reload form and re-locate elements: nodeIds may be stale and
+            # Stencil might be more ready on the second go.
+            logger.warning(
+                "Login submit rejected for %s on attempt %d, reloading and retrying",
+                self.username, submit_attempt,
             )
+            self._page.goto(self.login_url, wait_until="networkidle")
+            self._page.wait_for_timeout(2000)
+            try:
+                user_node, pass_node, btn_node = self._find_login_elements()
+            except CheckJCFormError:
+                raise CheckJCLoginRejected(
+                    f"CheckJC rejected the login for {self.username} and the "
+                    f"form is no longer locatable on the retry — bailing out."
+                )
+            last_body_size = len(self._page.content() or "")
 
         logger.info(f"Login successful for {self.username}, landed at {self._page.url}")
 
