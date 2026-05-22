@@ -355,16 +355,20 @@ class LLMVisionSolver(CaptchaSolver):
     Studio one — no Vertex/GCP project setup required.
     """
 
-    DEFAULT_MODEL = "gemini-2.5-flash"
+    # gemini-2.5-flash-lite is the cheapest model that still does this
+    # task reliably on the free tier. gemini-2.5-flash also works but
+    # only if we disable its "thinking" mode (see thinkingConfig below).
+    DEFAULT_MODEL = "gemini-2.5-flash-lite"
 
-    # Models we explicitly support / show in the user profile dropdown.
-    # `gemini-2.0-flash` is legacy (only available for existing projects
-    # as of March 2026) but kept here for users who already configured it.
+    # Models shown in the user profile dropdown. The "*" models in the
+    # comment are not in this list because they require a paid plan
+    # (gemini-2.5-pro: free quota = 0) or are legacy-only as of March
+    # 2026 (gemini-2.0-flash).
     SUPPORTED_MODELS = [
-        "gemini-2.5-flash",
-        "gemini-2.5-pro",
         "gemini-2.5-flash-lite",
-        "gemini-2.0-flash",
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",          # paid plan only
+        "gemini-2.0-flash",        # legacy, existing customers only
     ]
     ENDPOINT_TMPL = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
@@ -452,8 +456,16 @@ class LLMVisionSolver(CaptchaSolver):
             ],
             "generationConfig": {
                 "temperature": 0,
-                "maxOutputTokens": 32,
+                # 16 digits is ~10 output tokens. 64 leaves comfortable
+                # headroom and is still cheap.
+                "maxOutputTokens": 64,
                 "candidateCount": 1,
+                # Disable thinking on models that support it (2.5-flash).
+                # Without this, 2.5-flash spends its output budget on
+                # internal reasoning and returns a truncated reply.
+                # 2.5-flash-lite, 2.5-pro, and 2.0-flash either don't
+                # support this field or ignore it harmlessly.
+                "thinkingConfig": {"thinkingBudget": 0},
             },
         }
         try:
