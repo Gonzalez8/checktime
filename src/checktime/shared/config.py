@@ -98,12 +98,17 @@ def get_user_check_stagger_seconds() -> int:
 def get_checkjc_lite_retries() -> int:
     """Extra attempts to retry login when CheckJC serves the 'lite' variant.
 
-    Defaults to 1: a single retry is the absolute max we can afford. The
-    InfoJC report (May 2026) explicitly flagged "multiple consecutive
-    /login requests without waiting for response" as one of the reasons
-    for the account lockout, so we deliberately keep this conservative.
+    Defaults to 0: NO retry. After the InfoJC May 2026 lockout report
+    flagged "multiple consecutive /login requests" as one of the reasons
+    for the account ban, the operator explicitly opted for zero retries.
+    The hard cap at 2 in code stays as a belt-and-braces guard in case
+    someone raises this in stack.env without thinking it through.
+
+    Trade-off: if CheckJC serves the lite anti-bot variant on the only
+    attempt, the fichaje fails for that minute — but no second /login
+    GET happens, and no second submit ever could.
     """
-    return int(get_config('CHECKJC_LITE_RETRIES', '1'))
+    return int(get_config('CHECKJC_LITE_RETRIES', '0'))
 
 def get_checkjc_lite_retry_seconds() -> int:
     """Base seconds to wait between lite-variant retries.
