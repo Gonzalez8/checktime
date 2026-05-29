@@ -44,9 +44,33 @@ limiting, and the 6‑digit verification captcha).
   `.ics` calendar.
 - **Stagger** between consecutive users so a single shared egress IP
   doesn't trip CheckJC's anti‑bot.
-- Automatic **retry / back‑off** when CheckJC serves its stripped
-  "lite" HTML; per‑user **account lockout detection** that stops
-  retrying before CheckJC's threshold is hit.
+- **Anti‑detection humanization** so the scheduler looks like a real
+  user, not a bot. Layered defences added across the v1.10.x → v1.11
+  series after CheckJC's IDS issued a lockout report in May 2026:
+  - **±5 min per‑day deterministic offset** on the configured fichaje
+    time (seeded by user + date + check type) so it does not fire at
+    `HH:MM:00` every day, plus 0‑30 s extra jitter within the matched
+    minute.
+  - **20‑90 s "human think" pause** between login and the actual
+    fichaje click (was 1‑2 s — the most damning pattern in the report).
+  - **Human‑cadence keystrokes** (60‑180 ms per char, real
+    `keydown`/`keypress`/`keyup`) instead of the previous CDP
+    `Input.insertText` that fired no events.
+  - **Mouse warmup** with intermediate positions before clicks.
+  - **Stealth init script** hiding `navigator.webdriver`, normalising
+    `languages`/`plugins`, adding the `chrome` object.
+  - **Real Chrome UA** + randomized viewport + Spanish locale/timezone.
+  - **Human captcha timing**: 1‑3 s "reading" pause, 0.4‑1.2 s between
+    keypad clicks, 0.6‑1.5 s "verifying" pause before submit.
+  - **Dashboard scroll** before clicking the fichaje button.
+  - All knobs are env‑tunable (`CHECKJC_*` in `.env.example`).
+- **Single `/login` submit per fichaje, by design**: the POST never
+  happens twice in the same session. `CHECKJC_LITE_RETRIES=0` by
+  default means even the `/login` GET is single‑shot (configurable up
+  to 1, hard‑capped to 1 in code).
+- Per‑user **account lockout** and **IP block** detection that stops
+  the scheduler immediately and notifies via Telegram, *before*
+  CheckJC's threshold can be hit.
 - Resilient to CheckJC v7.4: closed shadow DOM is traversed via CDP,
   Stencil hydration timing is handled with bounded waits.
 
@@ -316,7 +340,12 @@ release notes with full details and rationale.
 
 | Version | What it added / fixed |
 |---|---|
-| **v1.9.6** | Default Gemini model `gemini-2.5-flash-lite`, `thinkingBudget=0` for compatibility with `gemini-2.5-flash`, bigger `maxOutputTokens` |
+| **v1.11.0** | **±5 min per‑day deterministic schedule offset** seeded by `(user, date, check_type)` so the fichaje doesn't fire at the same minute every day. **Human captcha timing**: 1‑3 s read pause, 400‑1200 ms between clicks, 600‑1500 ms verify pause before submit. **Dashboard scroll** before clicking `#btn-check`. Targets the "always 09:00:XX" pattern flagged by InfoJC's IDS |
+| v1.10.3 | Default `CHECKJC_LITE_RETRIES=0` — never retry `/login` automatically (hard‑capped to 1 in code). Cleanup of the error message that referenced the now‑removed NordVPN egress |
+| v1.10.2 | `tests/debug_fichaje.py`: on‑demand standalone script that runs login + post‑login pause + check through the real `CheckJCClient`, mirroring the scheduler path. Useful for validating mitigations without waiting for the scheduled minute |
+| v1.10.1 | **Per‑user Gemini captcha debug dump** at `/var/log/checktime/captcha_dumps/<user>.{png,txt}` overwritten on every call. Always logs Gemini's raw reply, `finishReason`, `promptFeedback`, `usageMetadata`. Composite image preserved for visual inspection. Disk footprint bounded by user count, not fichaje count |
+| **v1.10.0** | **Humanize CheckJC login** end‑to‑end after the InfoJC May 2026 lockout report: stealth init script (`navigator.webdriver` + plugins), real keystroke events instead of CDP `Input.insertText`, mouse warmup with intermediate positions, viewport randomization, schedule jitter (0‑30 s), post‑login human pause (20‑90 s), lite‑variant retry hard‑cap with exponential backoff. Plus `logging_job=checktime` Docker label so Promtail pins `job="checktime"` in Loki |
+| v1.9.6 | Default Gemini model `gemini-2.5-flash-lite`, `thinkingBudget=0` for compatibility with `gemini-2.5-flash`, bigger `maxOutputTokens` |
 | v1.9.5 | Detect CheckJC per‑user account lockout banner; back off retries that contributed to bans |
 | v1.9.4 | Extra Stencil hydration wait before submit on lite‑variant bodies *(retry portion reverted in 1.9.5)* |
 | v1.9.3 | Hotfix: 500 on `/auth/profile` caused by duplicate `name=` kwarg on submit buttons |
