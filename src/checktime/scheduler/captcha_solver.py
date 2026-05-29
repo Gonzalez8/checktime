@@ -22,11 +22,14 @@ Two implementations live here:
 from __future__ import annotations
 
 import io
+import json
 import logging
+import os
+import re
 import time
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from checktime.shared.db import db
 from checktime.shared.models.captcha import (
@@ -417,8 +420,14 @@ class LLMVisionSolver(CaptchaSolver):
         # Per-user model preference wins over the solver-level default.
         model = getattr(user, "gemini_model", None) or self.model
         composite_png = compose_captcha_image(captcha_image_bytes, keypad)
-        raw = self._ask_gemini(composite_png, api_key, model, user)
+        raw, debug = self._ask_gemini(composite_png, api_key, model, user)
+        sequence: Optional[List[str]] = None
         if raw is None:
+            self._persist_debug_dump(
+                user, composite_png, debug,
+                outcome=f"gemini_call_failed: {debug.get('error', 'unknown')}",
+                sequence=None,
+            )
             return None
         sequence = translate_16_digits_to_letters(raw, keypad)
         if sequence is None:
@@ -426,15 +435,32 @@ class LLMVisionSolver(CaptchaSolver):
                 "Gemini reply did not parse to 16 valid digits for %s (raw=%r)",
                 user.username, raw,
             )
+            self._persist_debug_dump(
+                user, composite_png, debug,
+                outcome="bad_parse_or_keypad_mismatch",
+                sequence=None,
+            )
             return None
         logger.info(
             "LLM solved captcha for user %s on attempt %d via %s",
             user.username, attempt, model,
         )
+        self._persist_debug_dump(
+            user, composite_png, debug, outcome="ok", sequence=sequence,
+        )
         return sequence
 
-    def _ask_gemini(self, composite_png: bytes, api_key: str, model: str, user: User) -> Optional[str]:
-        """Single Gemini call. Returns the raw text reply, or None on failure."""
+    def _ask_gemini(
+        self, composite_png: bytes, api_key: str, model: str, user: User,
+    ) -> Tuple[Optional[str], Dict[str, Any]]:
+        """Single Gemini call.
+
+        Returns (raw_text, debug_info). raw_text is the stripped model output
+        (or None on any failure). debug_info always contains diagnostic fields
+        used by the per-user dump: model, http_status, raw_response, error,
+        finish_reason, prompt_feedback, usage_metadata. Callers inspect both
+        the text (for the click sequence) and debug_info (for the dump).
+        """
         import base64 as _b64
         import requests
 
@@ -468,30 +494,103 @@ class LLMVisionSolver(CaptchaSolver):
                 "thinkingConfig": {"thinkingBudget": 0},
             },
         }
+        debug: Dict[str, Any] = {"model": model}
         try:
             resp = requests.post(url, json=body, timeout=self.http_timeout)
         except Exception as exc:
             logger.warning("Gemini HTTP call failed for user %s: %s", user.username, exc)
-            return None
+            debug["error"] = f"http_exception: {exc}"
+            return None, debug
+        debug["http_status"] = resp.status_code
         if resp.status_code != 200:
             logger.warning(
                 "Gemini returned %d for user %s: %s",
                 resp.status_code, user.username, resp.text[:200],
             )
-            return None
+            debug["error"] = f"non-200: {resp.text[:500]}"
+            return None, debug
         try:
             data = resp.json()
-            candidates = data.get("candidates") or []
-            if not candidates:
-                logger.warning("Gemini returned no candidates for user %s: %s",
-                               user.username, data)
-                return None
-            parts = candidates[0].get("content", {}).get("parts") or []
-            text = "".join(p.get("text", "") for p in parts).strip()
-            return text or None
         except Exception as exc:
-            logger.warning("Failed to parse Gemini response for %s: %s", user.username, exc)
-            return None
+            logger.warning("Failed to parse Gemini JSON for %s: %s", user.username, exc)
+            debug["error"] = f"json_parse: {exc}"
+            return None, debug
+
+        candidates = data.get("candidates") or []
+        debug["prompt_feedback"] = data.get("promptFeedback")
+        debug["usage_metadata"] = data.get("usageMetadata")
+        if not candidates:
+            logger.warning("Gemini returned no candidates for user %s: %s",
+                           user.username, data)
+            debug["error"] = "no_candidates"
+            debug["raw_response"] = ""
+            return None, debug
+
+        cand0 = candidates[0]
+        debug["finish_reason"] = cand0.get("finishReason")
+        parts = cand0.get("content", {}).get("parts") or []
+        text = "".join(p.get("text", "") for p in parts).strip()
+        debug["raw_response"] = text
+        # Surface the response in the scheduler log so failures are
+        # diagnosable without opening the per-user dump file. Truncated
+        # for safety (Gemini *should* return 16 chars; if it returns
+        # 5000 we still don't want to bloat the log line).
+        logger.info(
+            "Gemini reply for %s (model=%s, finish=%s, tokens_in=%s, tokens_out=%s): %r",
+            user.username, model, debug.get("finish_reason"),
+            (debug.get("usage_metadata") or {}).get("promptTokenCount"),
+            (debug.get("usage_metadata") or {}).get("candidatesTokenCount"),
+            text[:120],
+        )
+        return (text or None, debug)
+
+    def _persist_debug_dump(
+        self,
+        user: User,
+        composite_png: bytes,
+        debug: Dict[str, Any],
+        outcome: str,
+        sequence: Optional[List[str]],
+    ) -> None:
+        """Overwrite per-user debug artifacts on every Gemini attempt.
+
+        Writes two files into /var/log/checktime/captcha_dumps/:
+        - <username>.png — composite image as seen by Gemini
+        - <username>.txt — diagnostic dump: timestamp, model, raw reply,
+          finishReason, promptFeedback, usageMetadata, parsed sequence,
+          and outcome ('ok' or the failure reason).
+
+        One pair per user, always overwritten — disk footprint is bounded
+        by the number of users, not by the number of fichajes.
+        Failures here never propagate: dumping is best-effort.
+        """
+        try:
+            dump_dir = "/var/log/checktime/captcha_dumps"
+            os.makedirs(dump_dir, exist_ok=True)
+            # Sanitize: usernames are usually safe (DNI/NIE/email-local) but
+            # be defensive against path traversal.
+            safe_user = re.sub(r'[^A-Za-z0-9._-]', '_', user.username or "unknown")
+            base = os.path.join(dump_dir, safe_user)
+            with open(base + ".png", "wb") as f:
+                f.write(composite_png)
+            txt = io.StringIO()
+            txt.write(f"timestamp: {datetime.now().isoformat()}\n")
+            txt.write(f"user: {user.username}\n")
+            txt.write(f"outcome: {outcome}\n")
+            txt.write(f"sequence: {sequence!r}\n")
+            txt.write(f"model: {debug.get('model')}\n")
+            txt.write(f"http_status: {debug.get('http_status')}\n")
+            txt.write(f"finish_reason: {debug.get('finish_reason')}\n")
+            txt.write(f"raw_response: {debug.get('raw_response')!r}\n")
+            txt.write(f"prompt_feedback: {json.dumps(debug.get('prompt_feedback'), ensure_ascii=False)}\n")
+            txt.write(f"usage_metadata: {json.dumps(debug.get('usage_metadata'), ensure_ascii=False)}\n")
+            if debug.get("error"):
+                txt.write(f"error: {debug['error']}\n")
+            with open(base + ".txt", "w", encoding="utf-8") as f:
+                f.write(txt.getvalue())
+        except Exception as exc:
+            logger.warning("Could not persist captcha debug dump for %s: %s",
+                           user.username, exc)
 
 
 class HybridCaptchaSolver(CaptchaSolver):
