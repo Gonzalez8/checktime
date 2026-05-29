@@ -289,8 +289,10 @@ class CheckJCClient:
             raise CheckJCFormError(
                 f"Login attempts exhausted for {self.username} "
                 f"(last body size: {last_body_size} bytes). "
-                f"Consider rotating the NordVPN exit IP or raising "
-                f"CHECKJC_LITE_RETRY_SECONDS."
+                f"CheckJC served a 'lite' anti-bot variant; the operator "
+                f"opted for zero retries to avoid the multi-/login pattern "
+                f"that triggered the May 2026 lockout. Try the next "
+                f"scheduled fichaje or check from the CheckJC web UI."
             )
 
         logger.info(
