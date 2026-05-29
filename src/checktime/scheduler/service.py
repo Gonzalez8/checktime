@@ -4,6 +4,7 @@ Scheduler service for CheckTime application.
 This script starts the scheduler service that checks schedules and performs scheduled clock-ins/outs for all users.
 """
 
+import hashlib
 import logging
 import random
 import schedule
@@ -32,6 +33,7 @@ from checktime.shared.config import (
     get_post_login_jitter_max_seconds,
     get_post_login_jitter_min_seconds,
     get_schedule_jitter_seconds,
+    get_schedule_random_offset_minutes,
     get_user_check_stagger_seconds,
 )
 from checktime.utils.telegram import TelegramClient
@@ -243,6 +245,31 @@ def perform_check_for_user(user, check_type):
                     telegram_msg, chat_id=user.telegram_chat_id, parse_mode=None,
                 )
 
+def _effective_time_for_today(user_id, configured_time, check_type, today, max_offset_min):
+    """Deterministically offset the configured HH:MM by ±max_offset_min
+    for (user_id, today, check_type).
+
+    Deterministic so within a single day the answer is stable: the
+    minute-tick scheduler can match it once and only once, no double
+    fires, no missed minutes. The seed is internal to the app, so
+    InfoJC's IDS can't predict tomorrow's actual time from today's.
+
+    Returns 'HH:MM'. Clamped to [00:00, 23:59] so an early-morning or
+    late-night fichaje doesn't roll into the next/previous day.
+    """
+    if max_offset_min <= 0 or not configured_time:
+        return configured_time
+    seed_input = f"{user_id}-{today.isoformat()}-{check_type}-{configured_time}"
+    h = hashlib.sha256(seed_input.encode("utf-8")).digest()
+    seed_int = int.from_bytes(h[:4], "big")
+    rng = random.Random(seed_int)
+    offset = rng.randint(-max_offset_min, max_offset_min)
+    hh, mm = configured_time.split(":")
+    base_minutes = int(hh) * 60 + int(mm)
+    new_minutes = max(0, min(1439, base_minutes + offset))
+    return f"{new_minutes // 60:02d}:{new_minutes % 60:02d}"
+
+
 def get_users_to_check_now():
     """
     Returns a list of (user, check_type) tuples for users who need to check in or out at the current time.
@@ -252,7 +279,10 @@ def get_users_to_check_now():
     if not users:
         return []
 
-    current_time = datetime.now().strftime("%H:%M")
+    now = datetime.now()
+    current_time = now.strftime("%H:%M")
+    today = now.date()
+    max_offset = get_schedule_random_offset_minutes()
     users_to_check = []
 
     for user in users:
@@ -261,9 +291,26 @@ def get_users_to_check_now():
         check_in_time, check_out_time = get_schedule_times(user.id)
         if check_in_time is None or check_out_time is None:
             continue
-        if current_time == check_in_time:
+        # Apply per-day deterministic ±N minute offset to the configured
+        # time. Mitigates the always-HH:MM:00 pattern that InfoJC's IDS
+        # flagged in the May 2026 lockout report.
+        eff_in = _effective_time_for_today(user.id, check_in_time, "in", today, max_offset)
+        eff_out = _effective_time_for_today(user.id, check_out_time, "out", today, max_offset)
+        if current_time == eff_in:
+            logger.info(
+                "User %s: fichaje IN due now (configured=%s, effective=%s, offset=%+dmin)",
+                user.username, check_in_time, eff_in,
+                int(eff_in.split(":")[0]) * 60 + int(eff_in.split(":")[1])
+                - (int(check_in_time.split(":")[0]) * 60 + int(check_in_time.split(":")[1])),
+            )
             users_to_check.append((user, "in"))
-        elif current_time == check_out_time:
+        elif current_time == eff_out:
+            logger.info(
+                "User %s: fichaje OUT due now (configured=%s, effective=%s, offset=%+dmin)",
+                user.username, check_out_time, eff_out,
+                int(eff_out.split(":")[0]) * 60 + int(eff_out.split(":")[1])
+                - (int(check_out_time.split(":")[0]) * 60 + int(check_out_time.split(":")[1])),
+            )
             users_to_check.append((user, "out"))
     return users_to_check
 
