@@ -8,13 +8,18 @@ isn't reachable) to confirm that Gemini reads the captcha correctly
 with a given API key + model.
 
 Usage:
+    # Preferred: pass the key via env var so it never ends up in shell
+    # history or scrollback.
+    export GEMINI_API_KEY=...
+    python tests/debug_gemini_solver.py --image /path/to/composite.png
+
+    # Alternative (less safe — leaks into bash history):
     python tests/debug_gemini_solver.py \\
         --api-key YOUR_GEMINI_API_KEY \\
         --image /path/to/composite.png
 
-    # or use a different model
+    # Override the model:
     python tests/debug_gemini_solver.py \\
-        --api-key YOUR_KEY \\
         --image composite.png \\
         --model gemini-2.5-pro
 
@@ -32,6 +37,7 @@ solver will also work.
 import argparse
 import base64
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -58,6 +64,22 @@ ENDPOINT = (
 )
 
 
+def detect_mime(image_bytes: bytes) -> str:
+    """Return the MIME type by magic bytes. Production always sends PNG
+    (the composite is built with PIL), but ad-hoc tests may pass a JPG
+    they copied from Telegram or a screenshot."""
+    if image_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if image_bytes.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if image_bytes.startswith(b"GIF8"):
+        return "image/gif"
+    if image_bytes[:4] == b"RIFF" and image_bytes[8:12] == b"WEBP":
+        return "image/webp"
+    # Fallback to PNG — Gemini sometimes accepts it anyway.
+    return "image/png"
+
+
 def call_gemini(api_key: str, model: str, image_bytes: bytes, timeout: int = 30):
     url = ENDPOINT.format(model=model, key=api_key)
     body = {
@@ -68,7 +90,7 @@ def call_gemini(api_key: str, model: str, image_bytes: bytes, timeout: int = 30)
                     {"text": PROMPT},
                     {
                         "inline_data": {
-                            "mime_type": "image/png",
+                            "mime_type": detect_mime(image_bytes),
                             "data": base64.b64encode(image_bytes).decode("ascii"),
                         }
                     },
@@ -104,13 +126,25 @@ def parse_reply(raw: str):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[1])
-    parser.add_argument("--api-key", required=True, help="Gemini API key")
+    parser.add_argument(
+        "--api-key",
+        default=os.environ.get("GEMINI_API_KEY"),
+        help="Gemini API key (defaults to $GEMINI_API_KEY; preferred over CLI "
+             "so the key doesn't leak into shell history)",
+    )
     parser.add_argument("--image", required=True, help="Path to the composite PNG")
     parser.add_argument(
         "--model", default="gemini-2.5-flash-lite",
         help="Gemini model id (default: gemini-2.5-flash-lite)",
     )
     args = parser.parse_args(argv)
+
+    if not args.api_key:
+        print(
+            "ERROR: no API key provided. Set $GEMINI_API_KEY or pass --api-key.",
+            file=sys.stderr,
+        )
+        return 1
 
     image_path = Path(args.image)
     if not image_path.exists():
