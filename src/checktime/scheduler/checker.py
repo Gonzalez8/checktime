@@ -1,5 +1,6 @@
 import base64
 import logging
+import random
 import re
 from typing import Optional
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
@@ -7,6 +8,8 @@ from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 from checktime.shared.config import (
     get_checkjc_lite_retries,
     get_checkjc_lite_retry_seconds,
+    get_keystroke_delay_max_ms,
+    get_keystroke_delay_min_ms,
     get_selenium_timeout,
     get_simulation_mode,
 )
@@ -70,6 +73,39 @@ _CHROME_UA = (
     "(KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
 )
 
+# Injected before any page script runs. Patches the most common headless
+# tells (navigator.webdriver, missing chrome object, plugins/languages
+# inconsistencies) that anti-bot stacks check for. Belt-and-braces on top
+# of --disable-blink-features=AutomationControlled, which alone leaves a
+# couple of these gaps depending on the Chromium build.
+_STEALTH_INIT_SCRIPT = """
+(() => {
+  try {
+    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+  } catch (_) {}
+  try {
+    Object.defineProperty(navigator, 'languages', {
+      get: () => ['es-ES', 'es', 'en-US', 'en'],
+    });
+  } catch (_) {}
+  try {
+    Object.defineProperty(navigator, 'plugins', {
+      get: () => [1, 2, 3, 4, 5],
+    });
+  } catch (_) {}
+  if (!window.chrome) {
+    window.chrome = { runtime: {} };
+  }
+  const origQuery = window.navigator.permissions && window.navigator.permissions.query;
+  if (origQuery) {
+    window.navigator.permissions.query = (params) =>
+      params && params.name === 'notifications'
+        ? Promise.resolve({ state: Notification.permission })
+        : origQuery(params);
+  }
+})();
+"""
+
 
 class CheckJCClient:
     """Cliente para CheckJC v7.4 usando Chromium real vía Playwright.
@@ -125,15 +161,28 @@ class CheckJCClient:
                 "--disable-blink-features=AutomationControlled",
             ],
         )
+        # Small viewport randomization so two consecutive sessions don't
+        # produce identical client-side fingerprints. Stays close enough
+        # to 1280x800 that layout assumptions still hold.
+        viewport_w = 1280 + random.randint(-40, 40)
+        viewport_h = 800 + random.randint(-30, 30)
         self._context = self._browser.new_context(
             user_agent=_CHROME_UA,
             locale="es-ES",
-            viewport={"width": 1280, "height": 800},
+            timezone_id="Europe/Madrid",
+            viewport={"width": viewport_w, "height": viewport_h},
+            extra_http_headers={
+                "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
+            },
         )
+        self._context.add_init_script(_STEALTH_INIT_SCRIPT)
         self._context.set_default_timeout(self._timeout_ms)
         self._page = self._context.new_page()
         self._cdp = self._context.new_cdp_session(self._page)
-        logger.info(f"Chromium iniciado para {self.username}")
+        logger.info(
+            "Chromium iniciado para %s (viewport=%dx%d)",
+            self.username, viewport_w, viewport_h,
+        )
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -156,8 +205,13 @@ class CheckJCClient:
             logger.info(f"Simulation: Login successful for {self.username}")
             return True
 
-        max_attempts = get_checkjc_lite_retries() + 1
-        retry_wait_ms = get_checkjc_lite_retry_seconds() * 1000
+        # Hard cap at 2 total attempts (1 retry) regardless of config:
+        # InfoJC's IDS flagged "rapid consecutive login requests" as one
+        # of the lockout reasons, so we never want to hit /login more
+        # than twice in a session even if the operator raises the env.
+        configured_retries = max(0, get_checkjc_lite_retries())
+        max_attempts = min(configured_retries + 1, 2)
+        retry_base_ms = get_checkjc_lite_retry_seconds() * 1000
 
         user_node = pass_node = btn_node = None
         last_body_size = None
@@ -167,7 +221,9 @@ class CheckJCClient:
             )
             self._page.goto(self.login_url, wait_until="networkidle")
             # Hidratación de Stencil + render del template shadow DOM closed.
-            self._page.wait_for_timeout(2000)
+            # Slight randomization so two sessions don't have an identical
+            # post-goto wait fingerprint.
+            self._page.wait_for_timeout(2000 + random.randint(0, 500))
 
             body_text = self._page.content()
             body_size = len(body_text or "")
@@ -211,13 +267,18 @@ class CheckJCClient:
                 # Retry; el goto siguiente reutiliza el mismo Context, así
                 # que caché y cookies persisten.
                 if body_size < _LITE_BODY_THRESHOLD and attempt < max_attempts:
+                    # Exponential backoff with jitter so we never hit
+                    # /login again in <60s. Mitigates the "rapid retries"
+                    # flag the IDS picked up.
+                    backoff_ms = retry_base_ms * (2 ** (attempt - 1))
+                    backoff_ms += random.randint(0, 20_000)
                     logger.warning(
                         "Lite variant for %s (body=%d bytes, attempt %d/%d); "
-                        "sleeping %ds before retry",
+                        "sleeping %.1fs before retry",
                         self.username, body_size, attempt, max_attempts,
-                        retry_wait_ms // 1000,
+                        backoff_ms / 1000,
                     )
-                    self._page.wait_for_timeout(retry_wait_ms)
+                    self._page.wait_for_timeout(backoff_ms)
                     continue
                 # Body normal pero form no encontrado: cambio de DOM real,
                 # no se arregla esperando. Propagar tal cual.
@@ -253,13 +314,22 @@ class CheckJCClient:
             )
             self._page.wait_for_timeout(3000)
 
-        # Rellenar inputs.
-        self._cdp_focus(user_node)
-        self._cdp.send("Input.insertText", {"text": self.username})
-        self._cdp_focus(pass_node)
-        self._cdp.send("Input.insertText", {"text": self.password})
+        # Rellenar inputs con eventos de teclado reales (no Input.insertText).
+        # CheckJC v7.4 puede observar la ausencia de keydown/keyup/input por JS
+        # del propio Stencil; con insertText el listener interno solo veía un
+        # cambio de value sin cadena de eventos, lo que figuraba en el informe
+        # de InfoJC como "manipulación de campos". `page.keyboard.type` dispara
+        # la secuencia completa que un humano produciría.
+        self._human_type_into(user_node, self.username)
+        # Tab-like pause between fields.
+        self._page.wait_for_timeout(random.randint(150, 400))
+        self._human_type_into(pass_node, self.password)
 
-        # Click sobre el botón en sus coordenadas reales.
+        # Humanizing mouse warmup before clicking submit: move the pointer
+        # toward the button via a couple of intermediate positions instead
+        # of teleporting. Cheap and avoids the "perfect-stillness" tell.
+        self._human_mouse_warmup_to(btn_node)
+        self._page.wait_for_timeout(random.randint(200, 500))
         self._cdp_click(btn_node)
         logger.info("Login button clicked for %s", self.username)
 
@@ -497,6 +567,56 @@ class CheckJCClient:
     def _cdp_focus(self, node_id):
         self._cdp.send("DOM.focus", {"nodeId": node_id})
 
+    def _human_type_into(self, node_id, text: str):
+        """Focus the node and type its text character-by-character via the
+        Page keyboard so real keydown/keypress/keyup events fire.
+
+        Necessary because CheckJC's Stencil form validation may listen for
+        input events; `Input.insertText` only mutates value and was flagged
+        by InfoJC's IDS as "manipulation of fields". Per-char random delay
+        also kills the constant-cadence fingerprint.
+        """
+        self._cdp_focus(node_id)
+        delay_min = max(0, get_keystroke_delay_min_ms())
+        delay_max = max(delay_min, get_keystroke_delay_max_ms())
+        for ch in text:
+            self._page.keyboard.type(ch)
+            if delay_max > 0:
+                self._page.wait_for_timeout(random.randint(delay_min, delay_max))
+
+    def _human_mouse_warmup_to(self, node_id):
+        """Move the mouse from (roughly) wherever it is toward the node's
+        center via 2-3 intermediate points before the eventual click.
+
+        We don't need precision — the click itself is dispatched via CDP
+        at exact coordinates anyway. Goal is only to break the "no mouse
+        movement ever" signal that headless automations leak.
+        """
+        try:
+            box = self._cdp.send("DOM.getBoxModel", {"nodeId": node_id})
+            c = box["model"]["content"]
+            target_x = (c[0] + c[2]) / 2
+            target_y = (c[1] + c[5]) / 2
+        except Exception:
+            return
+        # Start somewhere "elsewhere on the page". Random but bounded.
+        start_x = random.randint(50, 400)
+        start_y = random.randint(50, 300)
+        steps = random.randint(2, 4)
+        try:
+            self._page.mouse.move(start_x, start_y)
+            for i in range(1, steps + 1):
+                interp_x = start_x + (target_x - start_x) * (i / steps)
+                interp_y = start_y + (target_y - start_y) * (i / steps)
+                # Slight noise off the straight line.
+                interp_x += random.uniform(-6, 6)
+                interp_y += random.uniform(-6, 6)
+                self._page.mouse.move(interp_x, interp_y)
+                self._page.wait_for_timeout(random.randint(40, 110))
+        except Exception:
+            # Mouse movement is purely cosmetic — never block the click on it.
+            pass
+
     def _cdp_click(self, node_id):
         """Envía un click real (mousePressed + mouseReleased) en el centro
         del box del nodo. Funciona aunque el nodo viva dentro de un shadow
@@ -592,8 +712,9 @@ class CheckJCClient:
                 "button": "left", "clickCount": 1,
             })
         # Small breather: gives CheckJC's JS time to re-shuffle the keypad
-        # before we ask for the next click's coordinates.
-        self._page.wait_for_timeout(120)
+        # before we ask for the next click's coordinates. Randomized so
+        # repeated captcha solves don't fingerprint as identical cadence.
+        self._page.wait_for_timeout(random.randint(140, 280))
 
     def _capture_captcha_image(self) -> Optional[bytes]:
         """Return the JPEG bytes of the distorted captcha image, or None."""

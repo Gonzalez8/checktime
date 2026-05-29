@@ -65,6 +65,11 @@ services:
       - stack.env
     environment:
       - PYTHONPATH=/app
+    # See docker-compose.yml: pins job="checktime" in Loki via Promtail's
+    # `logging_job` override (otherwise the Compose service `app` becomes
+    # job="app" and our Grafana queries miss).
+    labels:
+      - "logging_job=checktime"
     volumes:
       - ./config:/app/config
       - /var/log/checktime:/var/log/checktime

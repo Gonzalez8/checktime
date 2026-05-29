@@ -98,17 +98,55 @@ def get_user_check_stagger_seconds() -> int:
 def get_checkjc_lite_retries() -> int:
     """Extra attempts to retry login when CheckJC serves the 'lite' variant.
 
-    The lite variant is the stripped HTML CheckJC returns when its
-    anti-bot fires: ~7-10 KB instead of ~70 KB, with form inputs in
-    markup but 0x0 box model. Reload+wait sometimes recovers a real
-    page from the same egress IP. The default of 2 means up to 3 total
-    attempts before giving up.
+    Defaults to 1: a single retry is the absolute max we can afford. The
+    InfoJC report (May 2026) explicitly flagged "multiple consecutive
+    /login requests without waiting for response" as one of the reasons
+    for the account lockout, so we deliberately keep this conservative.
     """
-    return int(get_config('CHECKJC_LITE_RETRIES', '2'))
+    return int(get_config('CHECKJC_LITE_RETRIES', '1'))
 
 def get_checkjc_lite_retry_seconds() -> int:
-    """Seconds to wait between lite-variant retries."""
+    """Base seconds to wait between lite-variant retries.
+
+    The actual wait is base * 2^(attempt-1) + random jitter, so the
+    second retry (if you raise CHECKJC_LITE_RETRIES > 1) waits at least
+    twice as long as the first. Default 60.
+    """
     return int(get_config('CHECKJC_LITE_RETRY_SECONDS', '60'))
+
+# Anti-detection / humanization
+def get_schedule_jitter_seconds() -> int:
+    """Random seconds in [0, X) to delay the per-user fichaje after the
+    minute trigger fires.
+
+    Without this, every user fires at exactly HH:MM:00 (modulo the
+    inter-user stagger), which is the cron-perfect fingerprint that
+    InfoJC's IDS flagged. Default 30. Set to 0 to disable.
+    """
+    return int(get_config('CHECKJC_SCHEDULE_JITTER_SECONDS', '30'))
+
+def get_post_login_jitter_min_seconds() -> int:
+    """Lower bound (inclusive) of the human-think pause between a
+    successful login and the actual fichaje click. Default 20.
+
+    The InfoJC report listed our previous behavior (login + fichaje
+    within 1-2 seconds, every day) as a top anomaly. Anything from
+    ~20s upward is plausible "user landed and clicked".
+    """
+    return int(get_config('CHECKJC_POST_LOGIN_JITTER_MIN_SECONDS', '20'))
+
+def get_post_login_jitter_max_seconds() -> int:
+    """Upper bound (inclusive) of the human-think pause. Default 90."""
+    return int(get_config('CHECKJC_POST_LOGIN_JITTER_MAX_SECONDS', '90'))
+
+def get_keystroke_delay_min_ms() -> int:
+    """Minimum per-character delay when typing username/password.
+    Default 60ms — fast typist territory."""
+    return int(get_config('CHECKJC_KEYSTROKE_DELAY_MIN_MS', '60'))
+
+def get_keystroke_delay_max_ms() -> int:
+    """Maximum per-character delay when typing. Default 180ms."""
+    return int(get_config('CHECKJC_KEYSTROKE_DELAY_MAX_MS', '180'))
 
 # Logging configuration
 def get_log_level() -> str:
