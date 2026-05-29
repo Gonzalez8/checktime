@@ -5,6 +5,7 @@ This script starts the scheduler service that checks schedules and performs sche
 """
 
 import logging
+import random
 import schedule
 import time
 from datetime import datetime
@@ -26,7 +27,13 @@ from checktime.scheduler.captcha_solver import (
     LLMVisionSolver,
     TelegramHumanSolver,
 )
-from checktime.shared.config import get_log_level, get_user_check_stagger_seconds
+from checktime.shared.config import (
+    get_log_level,
+    get_post_login_jitter_max_seconds,
+    get_post_login_jitter_min_seconds,
+    get_schedule_jitter_seconds,
+    get_user_check_stagger_seconds,
+)
 from checktime.utils.telegram import TelegramClient
 from checktime.shared.services.holiday_manager import HolidayManager
 from checktime.shared.services.user_manager import UserManager
@@ -196,6 +203,21 @@ def perform_check_for_user(user, check_type):
                 check_type=check_type,
             ) as client:
                 client.login()
+                # Human-think pause between login and fichaje. The InfoJC
+                # report (May 2026) showed our previous behavior fired the
+                # check 1-2s after login every single day — a textbook bot
+                # fingerprint. A random 20-90s pause makes the pattern
+                # indistinguishable from a real user landing on the
+                # dashboard and clicking after a moment.
+                jitter_min = max(0, get_post_login_jitter_min_seconds())
+                jitter_max = max(jitter_min, get_post_login_jitter_max_seconds())
+                if jitter_max > 0:
+                    pause_s = random.uniform(jitter_min, jitter_max)
+                    logger.info(
+                        "Post-login human pause for %s: sleeping %.1fs "
+                        "before fichaje", user.username, pause_s,
+                    )
+                    time.sleep(pause_s)
                 if check_type == "in":
                     client.check_in()
                     icon = "🟢"
@@ -251,6 +273,11 @@ def schedule_check():
     # CheckJC anti-bot serves a stripped 'lite' page when several logins
     # arrive from the same egress IP within seconds. Space users out.
     stagger_seconds = get_user_check_stagger_seconds()
+    # Per-firing schedule jitter so the run does NOT begin at HH:MM:00.
+    # InfoJC's IDS explicitly listed the always-09:00:XX cadence as a
+    # bot signal in the May 2026 lockout report; adding 0-30s of random
+    # delay breaks that pattern without affecting attendance accuracy.
+    jitter_max = max(0, get_schedule_jitter_seconds())
     for index, (user, check_type) in enumerate(users_to_check):
         if index > 0 and stagger_seconds > 0:
             logger.info(
@@ -258,6 +285,13 @@ def schedule_check():
                 stagger_seconds,
             )
             time.sleep(stagger_seconds)
+        if jitter_max > 0:
+            jitter_s = random.uniform(0, jitter_max)
+            logger.info(
+                "Schedule jitter for %s: sleeping %.1fs to desync HH:MM:00",
+                user.username, jitter_s,
+            )
+            time.sleep(jitter_s)
         perform_check_for_user(user, check_type)
 
 def perform_check_in():

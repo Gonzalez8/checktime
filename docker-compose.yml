@@ -28,6 +28,12 @@ services:
       - stack.env
     environment:
       - PYTHONPATH=/app
+    # Promtail relabels `job` from `com.docker.compose.service`, which would
+    # leave this container as job="app" (Compose service is named `app`).
+    # `logging_job` is the override label our Promtail config consumes to
+    # pin it as job="checktime" instead — matching the Grafana queries.
+    labels:
+      - "logging_job=checktime"
     volumes:
       - ./config:/app/config
       - /var/log/checktime:/var/log/checktime
