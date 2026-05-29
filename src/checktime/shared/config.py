@@ -120,6 +120,24 @@ def get_checkjc_lite_retry_seconds() -> int:
     return int(get_config('CHECKJC_LITE_RETRY_SECONDS', '60'))
 
 # Anti-detection / humanization
+def get_schedule_random_offset_minutes() -> int:
+    """Per-day deterministic offset of ±X minutes for each user's
+    configured check_in / check_out time.
+
+    InfoJC's May 2026 report flagged the always-09:00:XX cadence as a
+    bot signal. With this offset enabled, today's effective fichaje
+    time for user U is `configured ± random(-X, +X) minutes`, with the
+    random seed derived from (user_id, today, check_type). This keeps
+    the time STABLE within the same day (no double fires, no missed
+    minutes) while making the day-to-day pattern unpredictable.
+
+    Default 5 → effective window of ±5 min around the configured time.
+    Combined with `get_schedule_jitter_seconds()` (0-30s extra within
+    that minute), the total spread per day is ~±5min30s.
+    Set to 0 to fire exactly at the configured minute.
+    """
+    return int(get_config('CHECKJC_SCHEDULE_RANDOM_OFFSET_MINUTES', '5'))
+
 def get_schedule_jitter_seconds() -> int:
     """Random seconds in [0, X) to delay the per-user fichaje after the
     minute trigger fires.
@@ -152,6 +170,34 @@ def get_keystroke_delay_min_ms() -> int:
 def get_keystroke_delay_max_ms() -> int:
     """Maximum per-character delay when typing. Default 180ms."""
     return int(get_config('CHECKJC_KEYSTROKE_DELAY_MAX_MS', '180'))
+
+def get_captcha_read_delay_min_ms() -> int:
+    """Minimum pause before the FIRST captcha keypad click — simulates
+    a human reading the 6-digit distorted captcha. Default 1000ms."""
+    return int(get_config('CHECKJC_CAPTCHA_READ_DELAY_MIN_MS', '1000'))
+
+def get_captcha_read_delay_max_ms() -> int:
+    """Maximum 'reading the captcha' pause. Default 3000ms."""
+    return int(get_config('CHECKJC_CAPTCHA_READ_DELAY_MAX_MS', '3000'))
+
+def get_captcha_click_delay_min_ms() -> int:
+    """Minimum pause between consecutive keypad clicks. Default 400ms —
+    in the lower end of "human finds and clicks next button" range
+    (was 140ms before this release, too fast)."""
+    return int(get_config('CHECKJC_CAPTCHA_CLICK_DELAY_MIN_MS', '400'))
+
+def get_captcha_click_delay_max_ms() -> int:
+    """Maximum pause between consecutive keypad clicks. Default 1200ms."""
+    return int(get_config('CHECKJC_CAPTCHA_CLICK_DELAY_MAX_MS', '1200'))
+
+def get_captcha_submit_delay_min_ms() -> int:
+    """Minimum pause before clicking the captcha submit button.
+    Simulates a human verifying their input. Default 600ms."""
+    return int(get_config('CHECKJC_CAPTCHA_SUBMIT_DELAY_MIN_MS', '600'))
+
+def get_captcha_submit_delay_max_ms() -> int:
+    """Maximum pause before submit. Default 1500ms."""
+    return int(get_config('CHECKJC_CAPTCHA_SUBMIT_DELAY_MAX_MS', '1500'))
 
 # Logging configuration
 def get_log_level() -> str:

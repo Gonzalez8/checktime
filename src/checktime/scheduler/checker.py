@@ -6,6 +6,12 @@ from typing import Optional
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 
 from checktime.shared.config import (
+    get_captcha_click_delay_max_ms,
+    get_captcha_click_delay_min_ms,
+    get_captcha_read_delay_max_ms,
+    get_captcha_read_delay_min_ms,
+    get_captcha_submit_delay_max_ms,
+    get_captcha_submit_delay_min_ms,
     get_checkjc_lite_retries,
     get_checkjc_lite_retry_seconds,
     get_keystroke_delay_max_ms,
@@ -441,6 +447,15 @@ class CheckJCClient:
                 "Submitting captcha for %s (attempt %d): letters %s",
                 self.username, attempt, sequence,
             )
+            # Humanize captcha timing — a real user spends a few seconds
+            # READING the distorted captcha before starting to click, and
+            # ~0.5-1.5s per click finding the right keypad button. The
+            # previous timing (~140ms between clicks, no read pause) was
+            # one of the most obvious bot fingerprints in the InfoJC log.
+            read_min = max(0, get_captcha_read_delay_min_ms())
+            read_max = max(read_min, get_captcha_read_delay_max_ms())
+            self._page.wait_for_timeout(random.randint(read_min, read_max))
+
             for letter in sequence:
                 pos = self._current_position_of_letter(letter)
                 if pos is None:
@@ -455,6 +470,10 @@ class CheckJCClient:
                 raise CheckJCFormError(
                     f"Submit button not found on verification page for {self.username}"
                 )
+            # "Verifying my input" pause before submitting.
+            sub_min = max(0, get_captcha_submit_delay_min_ms())
+            sub_max = max(sub_min, get_captcha_submit_delay_max_ms())
+            self._page.wait_for_timeout(random.randint(sub_min, sub_max))
             self._cdp_click_at(submit_pos)
 
             # Wait for navigation away from /verification
@@ -536,6 +555,20 @@ class CheckJCClient:
                 f"within 15s. Diagnostics: {diag}. "
                 f"Possible cause: the user has no portal_host configured in CheckJC."
             )
+
+        # Humanizing browsing pattern before clicking: scroll down a bit
+        # (as if reading the dashboard), pause, scroll back up, pause
+        # again. A real user lands on /portal/employee, looks around, and
+        # then clicks. The previous behavior ("landed → clicked btn-check
+        # within 200ms") was a tell. Best-effort: any failure here is
+        # swallowed so the fichaje itself never blocks on cosmetics.
+        try:
+            self._page.mouse.wheel(0, random.randint(120, 320))
+            self._page.wait_for_timeout(random.randint(700, 1800))
+            self._page.mouse.wheel(0, -random.randint(80, 240))
+            self._page.wait_for_timeout(random.randint(400, 1100))
+        except Exception:
+            pass
 
         logger.info(f"Submitting check ({check_type}) for {self.username}")
         # Click vía Playwright (selectores normales bastan: #btn-check NO esta
@@ -713,10 +746,13 @@ class CheckJCClient:
                 "type": event_type, "x": x, "y": y,
                 "button": "left", "clickCount": 1,
             })
-        # Small breather: gives CheckJC's JS time to re-shuffle the keypad
-        # before we ask for the next click's coordinates. Randomized so
-        # repeated captcha solves don't fingerprint as identical cadence.
-        self._page.wait_for_timeout(random.randint(140, 280))
+        # Between-click pause. Default 400-1200ms — slower than a bot
+        # banging out clicks (which is what the previous 140-280ms looked
+        # like) and within the lower band of a human finding the next
+        # keypad button. Also gives CheckJC's JS time to re-shuffle.
+        click_min = max(0, get_captcha_click_delay_min_ms())
+        click_max = max(click_min, get_captcha_click_delay_max_ms())
+        self._page.wait_for_timeout(random.randint(click_min, click_max))
 
     def _capture_captcha_image(self) -> Optional[bytes]:
         """Return the JPEG bytes of the distorted captcha image, or None."""
