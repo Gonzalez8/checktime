@@ -1,6 +1,6 @@
 import logging
 
-from flask import Blueprint, render_template, redirect, url_for, flash, request, session
+from flask import Blueprint, render_template, redirect, url_for, flash, request, session, jsonify
 from flask_login import login_user, logout_user, login_required, current_user
 from flask_wtf import FlaskForm
 from wtforms import StringField, PasswordField, BooleanField, SubmitField, SelectField
@@ -352,3 +352,25 @@ def profile():
         google_api_form=google_api_form,
         google_api_key_set=current_user.has_google_api_key(),
     )
+
+
+@auth_bp.route('/profile/checkjc-password', methods=['GET'])
+@login_required
+def reveal_checkjc_password():
+    """Return the decrypted CheckJC password of the currently authenticated
+    user. Only ever exposes the caller's own password — there is no way
+    to address another user's row.
+
+    Used by the profile page so the operator can verify what's actually
+    stored against what they expect, without retyping. The stored value
+    is decrypted server-side and returned as JSON; the page already
+    requires login, so the password is shown in the same trust boundary
+    as the rest of the user's session data.
+    """
+    try:
+        password = current_user.checkjc_password  # property already decrypts
+    except Exception as exc:
+        logger.exception("Failed to decrypt CheckJC password for user %s",
+                         current_user.username)
+        return jsonify({"error": "decrypt_failed", "detail": str(exc)}), 500
+    return jsonify({"password": password or ""})

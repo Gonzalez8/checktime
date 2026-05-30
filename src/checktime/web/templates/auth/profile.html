@@ -119,6 +119,17 @@
                                     <div class="text-danger">{{ error }}</div>
                                     {% endfor %}
                                     <div class="form-text">{{ _('leave_empty_to_keep_current_password') }}</div>
+                                    <button type="button" id="reveal-checkjc-password-btn"
+                                            class="btn btn-sm btn-outline-secondary mt-2"
+                                            data-url="{{ url_for('auth.reveal_checkjc_password') }}">
+                                        <i class="bi bi-eye"></i>
+                                        <span>Mostrar contraseña guardada</span>
+                                    </button>
+                                    <div id="reveal-checkjc-password-output"
+                                         class="form-text mt-2" style="display: none;">
+                                        <strong>Contraseña guardada:</strong>
+                                        <code id="reveal-checkjc-password-value"></code>
+                                    </div>
                                 </div>
                                 
                                 <div class="mb-3">
@@ -283,6 +294,46 @@
             // Update URL
             history.pushState(null, null, $(this).attr('href'));
         });
+
+        // Reveal-stored-CheckJC-password button.
+        // Calls /auth/profile/checkjc-password which returns the decrypted
+        // password for the current user, then toggles visibility next to
+        // the input. Useful to verify what's in the DB without retyping.
+        var revealBtn = document.getElementById('reveal-checkjc-password-btn');
+        var revealOut = document.getElementById('reveal-checkjc-password-output');
+        var revealVal = document.getElementById('reveal-checkjc-password-value');
+        if (revealBtn) {
+            var shown = false;
+            revealBtn.addEventListener('click', function () {
+                if (shown) {
+                    revealOut.style.display = 'none';
+                    revealVal.textContent = '';
+                    revealBtn.querySelector('span').textContent = 'Mostrar contraseña guardada';
+                    revealBtn.querySelector('i').className = 'bi bi-eye';
+                    shown = false;
+                    return;
+                }
+                fetch(revealBtn.dataset.url, { credentials: 'same-origin' })
+                    .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+                    .then(function (res) {
+                        if (!res.ok) {
+                            revealVal.textContent = '(error: ' + (res.body && res.body.error) + ')';
+                        } else if (!res.body.password) {
+                            revealVal.textContent = '(no hay contraseña guardada)';
+                        } else {
+                            revealVal.textContent = res.body.password;
+                        }
+                        revealOut.style.display = '';
+                        revealBtn.querySelector('span').textContent = 'Ocultar contraseña guardada';
+                        revealBtn.querySelector('i').className = 'bi bi-eye-slash';
+                        shown = true;
+                    })
+                    .catch(function (err) {
+                        revealVal.textContent = '(error de red: ' + err + ')';
+                        revealOut.style.display = '';
+                    });
+            });
+        }
     });
 </script>
 {% endblock %} 
