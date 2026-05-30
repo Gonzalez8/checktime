@@ -116,6 +116,13 @@ def _user_label(user_id, username=None):
     return f"user_id={user_id}"
 
 
+# (user_id, day) -> True if we already emitted today's schedule preview
+# for this user. Prevents the per-minute schedule_check tick from spamming
+# the same log line all day. Cleared by process restart (which is fine —
+# a restart re-announcing is exactly what the operator wants).
+_schedule_preview_logged_for = {}
+
+
 def is_working_day(user_id=None, username=None):
     """
     Check if today is a working day for a specific user.
@@ -312,6 +319,27 @@ def get_users_to_check_now():
         # flagged in the May 2026 lockout report.
         eff_in = _effective_time_for_today(user.id, check_in_time, "in", today, max_offset)
         eff_out = _effective_time_for_today(user.id, check_out_time, "out", today, max_offset)
+
+        # Once per day per user: emit a preview line at INFO so the
+        # operator can see exactly when the fichaje will happen today
+        # without having to wait for the fire-time log or compute the
+        # offset by hand. Cached so the per-minute tick doesn't spam.
+        preview_key = (user.id, today)
+        if not _schedule_preview_logged_for.get(preview_key):
+            def _offset_min(configured, effective):
+                ch, cm = (int(x) for x in configured.split(":"))
+                eh, em = (int(x) for x in effective.split(":"))
+                return (eh * 60 + em) - (ch * 60 + cm)
+            logger.info(
+                "Today's schedule for user %s (id=%d): "
+                "IN configured=%s effective=%s (%+dmin), "
+                "OUT configured=%s effective=%s (%+dmin)",
+                user.username, user.id,
+                check_in_time, eff_in, _offset_min(check_in_time, eff_in),
+                check_out_time, eff_out, _offset_min(check_out_time, eff_out),
+            )
+            _schedule_preview_logged_for[preview_key] = True
+
         if current_time == eff_in:
             logger.info(
                 "User %s: fichaje IN due now (configured=%s, effective=%s, offset=%+dmin)",
