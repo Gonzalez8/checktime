@@ -116,10 +116,11 @@ def _user_label(user_id, username=None):
     return f"user_id={user_id}"
 
 
-# (user_id, day) -> True if we already emitted today's schedule preview
-# for this user. Prevents the per-minute schedule_check tick from spamming
-# the same log line all day. Cleared by process restart (which is fine —
-# a restart re-announcing is exactly what the operator wants).
+# user_id -> (date, check_in_time, check_out_time) of the last schedule
+# preview we logged for this user. We re-emit the preview whenever the
+# tuple changes: new day, OR same day but the configured times moved
+# (e.g., the operator added an override at 18:00 for a 19:00 fichaje).
+# One entry per user max — replaces on change, never grows unbounded.
 _schedule_preview_logged_for = {}
 
 
@@ -320,25 +321,30 @@ def get_users_to_check_now():
         eff_in = _effective_time_for_today(user.id, check_in_time, "in", today, max_offset)
         eff_out = _effective_time_for_today(user.id, check_out_time, "out", today, max_offset)
 
-        # Once per day per user: emit a preview line at INFO so the
-        # operator can see exactly when the fichaje will happen today
-        # without having to wait for the fire-time log or compute the
-        # offset by hand. Cached so the per-minute tick doesn't spam.
-        preview_key = (user.id, today)
-        if not _schedule_preview_logged_for.get(preview_key):
+        # Emit a preview at INFO so the operator sees exactly when the
+        # fichaje will happen today without waiting for the fire-time
+        # log or computing the offset by hand. Re-emitted whenever the
+        # tuple (date, check_in_time, check_out_time) changes — so a
+        # mid-day override that moves the configured time triggers a
+        # fresh announcement, not silence.
+        preview_value = (today, check_in_time, check_out_time)
+        if _schedule_preview_logged_for.get(user.id) != preview_value:
             def _offset_min(configured, effective):
                 ch, cm = (int(x) for x in configured.split(":"))
                 eh, em = (int(x) for x in effective.split(":"))
                 return (eh * 60 + em) - (ch * 60 + cm)
+            previous = _schedule_preview_logged_for.get(user.id)
+            change_reason = "first time today" if previous is None or previous[0] != today \
+                else "schedule changed mid-day"
             logger.info(
-                "Today's schedule for user %s (id=%d): "
+                "Today's schedule for user %s (id=%d) — %s: "
                 "IN configured=%s effective=%s (%+dmin), "
                 "OUT configured=%s effective=%s (%+dmin)",
-                user.username, user.id,
+                user.username, user.id, change_reason,
                 check_in_time, eff_in, _offset_min(check_in_time, eff_in),
                 check_out_time, eff_out, _offset_min(check_out_time, eff_out),
             )
-            _schedule_preview_logged_for[preview_key] = True
+            _schedule_preview_logged_for[user.id] = preview_value
 
         if current_time == eff_in:
             logger.info(
