@@ -28,6 +28,7 @@ from checktime.scheduler.captcha_solver import (
     LLMVisionSolver,
     TelegramHumanSolver,
 )
+from checktime.shared.repository.day_override_repository import DayOverrideRepository
 from checktime.shared.config import (
     get_log_level,
     get_post_login_jitter_max_seconds,
@@ -149,6 +150,22 @@ def is_working_day(user_id=None, username=None):
         if date_str in holidays:
             logger.info(f"Holiday found in database for {label}: {today}")
             return False
+
+        # A DayOverride for today UNLOCKS the day as a fichaje day, even
+        # if the regular schedule wouldn't fire. This matches the user's
+        # mental model: "if I created an override, I want fichaje today
+        # regardless of weekday/period setup". Holidays still win above
+        # (legal holiday > override). Override can be deleted or updated
+        # mid-day — the scheduler picks up the change on the next minute
+        # tick because it re-reads override + schedule every iteration.
+        if user_id is not None:
+            override = DayOverrideRepository().get_by_user_and_date(user_id, today)
+            if override:
+                logger.info(
+                    f"Day override active for {label}: {today} → "
+                    f"working day ({override.check_in_time} - {override.check_out_time})"
+                )
+                return True
 
         # Check if there's a schedule for today for this user using ScheduleManager
         active_period = schedule_manager.get_active_period_for_date(today, user_id)
