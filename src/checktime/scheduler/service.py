@@ -106,66 +106,82 @@ schedule_manager = ScheduleManager()
 # Create Flask app
 app = create_app()
 
-def is_working_day(user_id=None):
+def _user_label(user_id, username=None):
+    """Format the user identifier for log messages: prefer username, fall
+    back to id. Keeps logs readable when the caller has the User object
+    (almost always) without changing the public signature of helpers
+    that are still called with just an id."""
+    if username:
+        return f"user {username} (id={user_id})"
+    return f"user_id={user_id}"
+
+
+def is_working_day(user_id=None, username=None):
     """
     Check if today is a working day for a specific user.
-    
+
     Args:
         user_id (int, optional): The user ID to check. If None, checks globally.
-    
+        username (str, optional): Username for log readability — does not
+            affect the lookup, only the log lines.
+
     Returns:
         bool: True if it's a working day, False otherwise.
     """
     with app.app_context():
         today = datetime.now().date()
         weekday = today.weekday()
-        
+        label = _user_label(user_id, username)
+
         # Check if it's a holiday for this user using HolidayManager
         holiday_manager = HolidayManager(user_id)
         date_str = today.strftime('%Y-%m-%d')
         holidays = holiday_manager.load_holidays(user_id)
-        
+
         if date_str in holidays:
-            logger.info(f"Holiday found in database for user {user_id}: {today}")
+            logger.info(f"Holiday found in database for {label}: {today}")
             return False
-        
+
         # Check if there's a schedule for today for this user using ScheduleManager
         active_period = schedule_manager.get_active_period_for_date(today, user_id)
         if not active_period:
-            logger.info(f"No active period for today: {today} for user {user_id}")
+            logger.info(f"No active period for today: {today} for {label}")
             return False
-        
+
         # Check if there's a schedule configured for this day of the week
         day_schedule = schedule_manager.get_day_schedule(active_period.id, weekday)
         if not day_schedule:
-            logger.info(f"No schedule configured for today ({weekday}): {today} for user {user_id}")
+            logger.info(f"No schedule configured for today (weekday={weekday}): {today} for {label}")
             return False
-        
-        logger.info(f"Today is a working day: {today} for user {user_id}")
+
+        logger.info(f"Today is a working day: {today} for {label}")
         return True
 
-def get_schedule_times(user_id):
+def get_schedule_times(user_id, username=None):
     """
     Get check-in and check-out times based on the current schedule in database for a specific user.
-    
+
     Args:
         user_id (int): The user ID to get schedule for.
-        
+        username (str, optional): Username for log readability — does not
+            affect the lookup, only the log lines.
+
     Returns:
         tuple: (check_in_time, check_out_time) or (None, None) if no schedule.
     """
     with app.app_context():
         today = datetime.now().date()
-        
+        label = _user_label(user_id, username)
+
         # Get schedule times for today using ScheduleManager
         check_in_time, check_out_time = schedule_manager.get_schedule_times_for_date(today, user_id)
-        
+
         if check_in_time and check_out_time:
-            logger.info(f"Using schedule from database for user {user_id}: {check_in_time} - {check_out_time}")
+            logger.info(f"Using schedule from database for {label}: {check_in_time} - {check_out_time}")
             return check_in_time, check_out_time
-        
+
         # If no configuration in the database, don't clock
-        logger.info(f"No schedule configured in the database for user {user_id}. Automatic clock in/out will not be performed.")
+        logger.info(f"No schedule configured in the database for {label}. Automatic clock in/out will not be performed.")
         return None, None
 
 def perform_check_for_user(user, check_type):
@@ -176,7 +192,7 @@ def perform_check_for_user(user, check_type):
         user (User): The user to perform check for.
         check_type (str): Type of check ('in' or 'out')
     """
-    if not is_working_day(user.id):
+    if not is_working_day(user.id, user.username):
         message = f"Today is not a working day or it's a holiday for user {user.username}. No check will be performed."
         logger.info(message)
         return
@@ -286,9 +302,9 @@ def get_users_to_check_now():
     users_to_check = []
 
     for user in users:
-        if not is_working_day(user.id):
+        if not is_working_day(user.id, user.username):
             continue
-        check_in_time, check_out_time = get_schedule_times(user.id)
+        check_in_time, check_out_time = get_schedule_times(user.id, user.username)
         if check_in_time is None or check_out_time is None:
             continue
         # Apply per-day deterministic ±N minute offset to the configured
