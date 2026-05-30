@@ -351,6 +351,11 @@ class CheckJCClient:
         except PWTimeout:
             # Check both new banners that the retry could have surfaced:
             body_after = self._page.content()
+            # Persist the full failure context BEFORE raising so future
+            # debugging can compare what CheckJC actually returned
+            # against the page we expected. Overwrites the previous
+            # dump for this user; disk footprint stays bounded.
+            self._persist_login_failure_dump(body_after, last_body_size)
             remaining = self._account_lock_message(body_after)
             if remaining is not None:
                 raise CheckJCAccountLocked(
@@ -367,6 +372,7 @@ class CheckJCClient:
             raise CheckJCLoginRejected(
                 f"CheckJC rejected the login for {self.username}: "
                 f"still at {self._page.url!r} after submit. "
+                f"Dump saved to /var/log/checktime/login_failures/{self.username}.{{html,png,txt}}. "
                 f"Check if the user can log in via the web."
             )
 
@@ -598,6 +604,68 @@ class CheckJCClient:
         return self.perform_check("out")
 
     # --- helpers ---
+
+    def _persist_login_failure_dump(self, body_html, last_body_size):
+        """Save HTML, screenshot, and metadata of a failed login submit.
+
+        Called from the PWTimeout handler in login(). Writes three files,
+        all overwritten on every failure for the same user so disk usage
+        stays bounded:
+
+        - /var/log/checktime/login_failures/<user>.html
+        - /var/log/checktime/login_failures/<user>.png   (viewport only)
+        - /var/log/checktime/login_failures/<user>.txt   (small metadata)
+
+        Best-effort: any IO error is swallowed so we never lose the
+        original CheckJCLoginRejected error to a dump-write exception.
+        """
+        try:
+            import os as _os
+            from datetime import datetime as _dt
+            dump_dir = "/var/log/checktime/login_failures"
+            _os.makedirs(dump_dir, exist_ok=True)
+            safe_user = re.sub(r"[^A-Za-z0-9._-]", "_", self.username or "unknown")
+            base = _os.path.join(dump_dir, safe_user)
+            # HTML — what CheckJC actually served after our submit
+            try:
+                with open(base + ".html", "w", encoding="utf-8") as f:
+                    f.write(body_html or "")
+            except Exception as exc:
+                logger.warning("Could not write login failure HTML for %s: %s",
+                               self.username, exc)
+            # Screenshot — visual state of the page at the moment of failure
+            try:
+                self._page.screenshot(path=base + ".png", full_page=False)
+            except Exception as exc:
+                logger.warning("Could not screenshot login failure for %s: %s",
+                               self.username, exc)
+            # Metadata sidecar — quick at-a-glance summary
+            try:
+                cookies = self._context.cookies() if self._context else []
+                meta = (
+                    f"timestamp: {_dt.now().isoformat()}\n"
+                    f"user: {self.username}\n"
+                    f"subdomain: {self.subdomain}\n"
+                    f"final_url: {self._page.url}\n"
+                    f"login_page_body_size: {last_body_size}\n"
+                    f"after_submit_body_size: {len(body_html or '')}\n"
+                    f"user_agent: {_CHROME_UA}\n"
+                    f"cookies_count: {len(cookies)}\n"
+                    f"cookie_names: {[c.get('name') for c in cookies]}\n"
+                )
+                with open(base + ".txt", "w", encoding="utf-8") as f:
+                    f.write(meta)
+            except Exception as exc:
+                logger.warning("Could not write login failure metadata for %s: %s",
+                               self.username, exc)
+            logger.info(
+                "Login failure dump saved for %s at %s.{html,png,txt}",
+                self.username, base,
+            )
+        except Exception as exc:
+            # Outer catch-all so the dump never breaks the real error path.
+            logger.warning("Login failure dump failed for %s: %s",
+                           self.username, exc)
 
     def _cdp_focus(self, node_id):
         self._cdp.send("DOM.focus", {"nodeId": node_id})
