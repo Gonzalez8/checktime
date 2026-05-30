@@ -98,9 +98,15 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link nav-link-modern {% if request.endpoint and request.endpoint.startswith('admin.') and request.endpoint != 'admin.broadcast' %}active{% endif %}"
+                        <a class="nav-link nav-link-modern {% if request.endpoint in ('admin.users', 'admin.delete_user', 'admin.reset_user_password') %}active{% endif %}"
                            href="{{ url_for('admin.users') }}">
                             <i class="bi bi-people"></i> {{ _('admin_users') }}
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link nav-link-modern {% if request.endpoint and request.endpoint.startswith('admin.diagnostics') %}active{% endif %}"
+                           href="{{ url_for('admin.diagnostics') }}">
+                            <i class="bi bi-bug"></i> Diagnostics
                         </a>
                     </li>
                     {% endif %}

@@ -7,14 +7,39 @@ recover their account via Telegram).
 """
 
 import logging
+import os
+import re
 from functools import wraps
 
-from flask import Blueprint, abort, flash, redirect, render_template, request, session, url_for
+from flask import (
+    Blueprint, abort, flash, redirect, render_template, request,
+    send_file, session, url_for,
+)
 from flask_login import current_user, login_required
 
 from checktime.shared.services.user_manager import UserManager
 from checktime.utils.telegram import TelegramClient
 from checktime.web.translations import get_translation
+
+
+# Where the scheduler writes the per-user diagnostic dumps. Kept in sync
+# with the paths used in checker.py and captcha_solver.py — change one,
+# change both.
+_CAPTCHA_DUMP_DIR = "/var/log/checktime/captcha_dumps"
+_LOGIN_FAILURE_DIR = "/var/log/checktime/login_failures"
+
+# Whitelist of category -> set of allowed extensions. Anything outside
+# this map is rejected with a 404 in diagnostics_file().
+_DIAG_CATEGORIES = {
+    "captcha": {
+        "dir": _CAPTCHA_DUMP_DIR,
+        "exts": {"png", "txt"},
+    },
+    "login_failure": {
+        "dir": _LOGIN_FAILURE_DIR,
+        "exts": {"html", "png", "txt"},
+    },
+}
 
 
 logger = logging.getLogger(__name__)
@@ -172,3 +197,89 @@ def reset_user_password(user_id):
         temporary_password=temporary_password,
         target_user=user,
     )
+
+
+def _safe_username(raw):
+    """Same sanitization the dumpers apply when they write the file."""
+    return re.sub(r"[^A-Za-z0-9._-]", "_", raw or "")
+
+
+@admin_bp.route("/diagnostics")
+@login_required
+@admin_required
+def diagnostics():
+    """List all users with their available diagnostic dump artifacts.
+
+    Reads the two on-disk directories (`captcha_dumps`, `login_failures`)
+    and pairs whatever exists with the CheckTime users in the DB. Users
+    with no dumps still appear so the operator knows the absence is
+    real, not a miss.
+    """
+    user_manager = UserManager()
+    rows = []
+    for user in user_manager.list_users():
+        safe = _safe_username(user.username)
+        cap_png = os.path.join(_CAPTCHA_DUMP_DIR, f"{safe}.png")
+        cap_txt = os.path.join(_CAPTCHA_DUMP_DIR, f"{safe}.txt")
+        log_png = os.path.join(_LOGIN_FAILURE_DIR, f"{safe}.png")
+        log_txt = os.path.join(_LOGIN_FAILURE_DIR, f"{safe}.txt")
+        log_html = os.path.join(_LOGIN_FAILURE_DIR, f"{safe}.html")
+
+        def _mtime(path):
+            try:
+                return os.path.getmtime(path)
+            except Exception:
+                return None
+
+        rows.append({
+            "username": user.username,
+            "user_id": user.id,
+            "captcha": {
+                "png": os.path.exists(cap_png),
+                "txt": os.path.exists(cap_txt),
+                "mtime": _mtime(cap_png) or _mtime(cap_txt),
+            },
+            "login_failure": {
+                "html": os.path.exists(log_html),
+                "png": os.path.exists(log_png),
+                "txt": os.path.exists(log_txt),
+                "mtime": _mtime(log_png) or _mtime(log_html) or _mtime(log_txt),
+            },
+        })
+    return render_template("admin/diagnostics.html", rows=rows)
+
+
+@admin_bp.route("/diagnostics/file/<category>/<username>.<ext>")
+@login_required
+@admin_required
+def diagnostics_file(category, username, ext):
+    """Serve a single diagnostic dump file.
+
+    Strict whitelisting:
+    - category must be one of `_DIAG_CATEGORIES`
+    - ext must be in the category's allowed set
+    - username is regex-sanitized to the same set used by the dumpers,
+      so no '..' / '/' / NUL bytes survive
+    - file is only read from the category's fixed directory
+
+    HTML is served as text/plain on purpose so any embedded scripts in
+    the dumped CheckJC page do NOT execute under our origin. The
+    operator can still read the markup.
+    """
+    spec = _DIAG_CATEGORIES.get(category)
+    if not spec or ext not in spec["exts"]:
+        abort(404)
+    safe = _safe_username(username)
+    if not safe:
+        abort(404)
+    path = os.path.join(spec["dir"], f"{safe}.{ext}")
+    if not os.path.isfile(path):
+        abort(404)
+    mime = {
+        "png": "image/png",
+        "txt": "text/plain; charset=utf-8",
+        # HTML on purpose served as plain so the dumped page can't run
+        # scripts in our origin.
+        "html": "text/plain; charset=utf-8",
+    }[ext]
+    return send_file(path, mimetype=mime, as_attachment=False, max_age=0)

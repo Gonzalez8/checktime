@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+
+{% block title %}Diagnostics - {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="container my-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2 class="mb-0"><i class="bi bi-bug"></i> Diagnostics dumps</h2>
+    </div>
+    <p class="text-muted">
+        Volcados que el scheduler genera automáticamente cuando algo falla
+        o cuando interviene el solver de Gemini. Hay UN fichero por usuario
+        en cada categoría — se sobreescribe en cada intento, no se acumula.
+    </p>
+
+    {% if not rows %}
+        <div class="alert alert-info">No hay usuarios registrados.</div>
+    {% else %}
+        <div class="table-responsive">
+            <table class="table table-striped align-middle">
+                <thead>
+                    <tr>
+                        <th>Usuario</th>
+                        <th>Captcha (Gemini)</th>
+                        <th>Login rechazado</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                    <tr>
+                        <td>
+                            <strong>{{ row.username }}</strong>
+                            <div class="text-muted small">id={{ row.user_id }}</div>
+                        </td>
+                        <td>
+                            {% if row.captcha.png or row.captcha.txt %}
+                                <div class="small text-muted mb-1">
+                                    {% if row.captcha.mtime %}
+                                        Último: {{ row.captcha.mtime | int }} (epoch)
+                                    {% endif %}
+                                </div>
+                                {% if row.captcha.png %}
+                                    <a href="{{ url_for('admin.diagnostics_file', category='captcha', username=row.username, ext='png') }}"
+                                       target="_blank" class="d-inline-block me-2">
+                                        <img src="{{ url_for('admin.diagnostics_file', category='captcha', username=row.username, ext='png') }}"
+                                             alt="captcha {{ row.username }}"
+                                             style="max-width: 220px; max-height: 110px; border: 1px solid #ddd;">
+                                    </a>
+                                {% endif %}
+                                <div class="mt-1">
+                                    {% if row.captcha.txt %}
+                                        <a class="btn btn-sm btn-outline-primary"
+                                           href="{{ url_for('admin.diagnostics_file', category='captcha', username=row.username, ext='txt') }}"
+                                           target="_blank">
+                                            <i class="bi bi-file-text"></i> Ver metadatos
+                                        </a>
+                                    {% endif %}
+                                </div>
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if row.login_failure.png or row.login_failure.html or row.login_failure.txt %}
+                                <div class="small text-muted mb-1">
+                                    {% if row.login_failure.mtime %}
+                                        Último: {{ row.login_failure.mtime | int }} (epoch)
+                                    {% endif %}
+                                </div>
+                                {% if row.login_failure.png %}
+                                    <a href="{{ url_for('admin.diagnostics_file', category='login_failure', username=row.username, ext='png') }}"
+                                       target="_blank" class="d-inline-block me-2">
+                                        <img src="{{ url_for('admin.diagnostics_file', category='login_failure', username=row.username, ext='png') }}"
+                                             alt="login failure {{ row.username }}"
+                                             style="max-width: 220px; max-height: 110px; border: 1px solid #ddd;">
+                                    </a>
+                                {% endif %}
+                                <div class="mt-1 d-flex flex-wrap gap-2">
+                                    {% if row.login_failure.html %}
+                                        <a class="btn btn-sm btn-outline-primary"
+                                           href="{{ url_for('admin.diagnostics_file', category='login_failure', username=row.username, ext='html') }}"
+                                           target="_blank">
+                                            <i class="bi bi-code"></i> Ver HTML (source)
+                                        </a>
+                                    {% endif %}
+                                    {% if row.login_failure.txt %}
+                                        <a class="btn btn-sm btn-outline-primary"
+                                           href="{{ url_for('admin.diagnostics_file', category='login_failure', username=row.username, ext='txt') }}"
+                                           target="_blank">
+                                            <i class="bi bi-file-text"></i> Ver metadatos
+                                        </a>
+                                    {% endif %}
+                                </div>
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+
+    <div class="alert alert-secondary small mt-4">
+        <strong>Cómo se generan:</strong>
+        <ul class="mb-0">
+            <li><strong>Captcha</strong>: cada vez que el scheduler hace una llamada a Gemini para resolver el captcha de <code>/verification</code>. Incluye la imagen compuesta exacta que se envió al modelo y un <code>.txt</code> con la respuesta cruda + <code>finishReason</code> + <code>usageMetadata</code>.</li>
+            <li><strong>Login rechazado</strong>: cada vez que el submit del form de login no consigue salir de <code>/login</code> en 15 s. Incluye HTML completo de la página devuelta por CheckJC, screenshot del viewport y metadatos (URL final, tamaño del body, lista de cookies, UA).</li>
+            <li>Los ficheros viven en <code>/var/log/checktime/captcha_dumps/</code> y <code>/var/log/checktime/login_failures/</code> dentro del contenedor — un fichero por usuario, sobreescrito en cada incidente.</li>
+        </ul>
+    </div>
+</div>
+{% endblock %}
