@@ -237,6 +237,12 @@ class CheckJCClient:
         self._net_events = []
         self._console_events = []
         self._page_errors = []
+        # Requests actually attempted (esp. the auth XHR/POST) and any that
+        # failed without a response. Critical for telling "CheckJC rejected
+        # us" apart from "we never even submitted the form" — the latter
+        # shows up as zero auth requests here.
+        self._request_events = []
+        self._request_failures = []
 
     def __enter__(self):
         if SIMULATION_MODE:
@@ -348,6 +354,33 @@ class CheckJCClient:
             except Exception:
                 pass
 
+        def _on_request(request):
+            try:
+                rtype = request.resource_type
+                # Keep only meaningful requests: the auth call (xhr/fetch),
+                # navigations (document), and anything that isn't a plain GET.
+                # Static asset GETs (css/js/img/font) are noise here.
+                if rtype in ("xhr", "fetch", "document") or request.method != "GET":
+                    self._request_events.append(
+                        f"{request.method} [{rtype}] {request.url}"
+                    )
+                    if len(self._request_events) > self._MAX_NET_EVENTS:
+                        del self._request_events[: -self._MAX_NET_EVENTS]
+            except Exception:
+                pass
+
+        def _on_request_failed(request):
+            try:
+                failure = request.failure
+                self._request_failures.append(
+                    f"{request.method} [{request.resource_type}] {request.url} "
+                    f"-> {failure or 'failed'}"
+                )
+                if len(self._request_failures) > self._MAX_NET_EVENTS:
+                    del self._request_failures[: -self._MAX_NET_EVENTS]
+            except Exception:
+                pass
+
         def _on_console(msg):
             try:
                 self._console_events.append(f"[{msg.type}] {msg.text}")
@@ -365,6 +398,8 @@ class CheckJCClient:
                 pass
 
         try:
+            self._page.on("request", _on_request)
+            self._page.on("requestfailed", _on_request_failed)
             self._page.on("response", _on_response)
             self._page.on("console", _on_console)
             self._page.on("pageerror", _on_page_error)
@@ -846,15 +881,31 @@ class CheckJCClient:
                 lines += self._page_errors or ["(none)"]
                 lines += ["", "=== CONSOLE ==="]
                 lines += self._console_events or ["(none)"]
+                # Requests we actually attempted. If the auth POST/XHR is
+                # absent here, the form never submitted (client-side block)
+                # rather than CheckJC rejecting valid credentials.
+                lines += ["", "=== REQUESTS ATTEMPTED (xhr/fetch/doc + non-GET) ==="]
+                lines += self._request_events or ["(none)"]
+                lines += ["", "=== REQUESTS FAILED (no response) ==="]
+                lines += self._request_failures or ["(none)"]
+                # Responses. Skip static-asset GETs (css/js/img/font) so the
+                # auth call and navigations aren't buried; count the omitted.
                 lines += ["", "=== NETWORK (responses) ==="]
                 if self._net_events:
+                    static_types = {"stylesheet", "script", "image", "font", "media"}
+                    omitted = 0
                     for ev in self._net_events:
+                        if ev["type"] in static_types and ev["method"] == "GET":
+                            omitted += 1
+                            continue
                         lines.append(
                             f"{ev['status']} {ev['method']} [{ev['type']}] "
                             f"{ev['url']}  ({ev['content_type']})"
                         )
                         if ev.get("body"):
                             lines.append(f"    body: {ev['body']}")
+                    if omitted:
+                        lines.append(f"(+ {omitted} static asset GET responses omitted)")
                 else:
                     lines.append("(none captured)")
                 with open(base + ".txt", "w", encoding="utf-8") as f:
