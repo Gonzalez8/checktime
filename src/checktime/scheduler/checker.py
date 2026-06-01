@@ -243,6 +243,11 @@ class CheckJCClient:
         # shows up as zero auth requests here.
         self._request_events = []
         self._request_failures = []
+        # Snapshot of the login form elements (button/inputs) taken right
+        # before submit: tag, type, whether inside a <form>, value length.
+        # Tells us how the form is meant to be submitted and whether Stencil
+        # actually saw the values we typed.
+        self._form_debug = []
 
     def __enter__(self):
         if SIMULATION_MODE:
@@ -550,6 +555,17 @@ class CheckJCClient:
         # Tab-like pause between fields.
         self._page.wait_for_timeout(random.randint(150, 400))
         self._human_type_into(pass_node, self.password)
+
+        # Snapshot the form right before submit so a rejected login dump
+        # shows the real structure (button type, <form> ancestor) and
+        # whether the inputs hold the values we typed. Read-only.
+        self._form_debug = [
+            f"user_input:    {self._describe_node(user_node)}",
+            f"pass_input:    {self._describe_node(pass_node)}",
+            f"login_button:  {self._describe_node(btn_node)}",
+        ]
+        for line in self._form_debug:
+            logger.info("FORM DEBUG %s -> %s", self.username, line)
 
         # Humanizing mouse warmup before clicking submit: move the pointer
         # toward the button via a couple of intermediate positions instead
@@ -879,6 +895,8 @@ class CheckJCClient:
                     "=== PAGE ERRORS (uncaught JS) ===",
                 ]
                 lines += self._page_errors or ["(none)"]
+                lines += ["", "=== LOGIN FORM ELEMENTS (at submit time) ==="]
+                lines += self._form_debug or ["(not captured)"]
                 lines += ["", "=== CONSOLE ==="]
                 lines += self._console_events or ["(none)"]
                 # Requests we actually attempted. If the auth POST/XHR is
@@ -978,18 +996,68 @@ class CheckJCClient:
             pass
 
     def _cdp_click(self, node_id):
-        """Envía un click real (mousePressed + mouseReleased) en el centro
-        del box del nodo. Funciona aunque el nodo viva dentro de un shadow
-        root closed: las coordenadas son globales."""
+        """Envía un click real en el centro del box del nodo. Funciona aunque
+        el nodo viva dentro de un shadow root closed: las coordenadas son
+        globales.
+
+        Antes solo enviábamos mousePressed+mouseReleased sin mover primero el
+        ratón ni indicar el bitmask `buttons`. En esa forma Chromium no
+        siempre sintetiza un `click` real sobre el elemento (hit-test/hover
+        sin resolver), y el handler del componente Stencil no se disparaba:
+        el submit no producía ninguna petición. Ahora hacemos la secuencia
+        completa moved -> pressed(buttons=1) -> released, que es lo que un
+        click humano genera.
+        """
         box = self._cdp.send("DOM.getBoxModel", {"nodeId": node_id})
         c = box["model"]["content"]
         x = (c[0] + c[2]) / 2
         y = (c[1] + c[5]) / 2
-        for event_type in ("mousePressed", "mouseReleased"):
-            self._cdp.send("Input.dispatchMouseEvent", {
-                "type": event_type, "x": x, "y": y,
-                "button": "left", "clickCount": 1,
+        self._cdp.send("Input.dispatchMouseEvent", {
+            "type": "mouseMoved", "x": x, "y": y, "buttons": 0,
+        })
+        self._page.wait_for_timeout(random.randint(40, 120))
+        self._cdp.send("Input.dispatchMouseEvent", {
+            "type": "mousePressed", "x": x, "y": y,
+            "button": "left", "buttons": 1, "clickCount": 1,
+        })
+        self._page.wait_for_timeout(random.randint(40, 120))
+        self._cdp.send("Input.dispatchMouseEvent", {
+            "type": "mouseReleased", "x": x, "y": y,
+            "button": "left", "buttons": 0, "clickCount": 1,
+        })
+
+    def _describe_node(self, node_id):
+        """Return a short JSON description of a DOM node (tag, type, id,
+        class, value length, disabled, form ancestor, truncated outerHTML).
+
+        Used purely for diagnostics so a failed-login dump reveals how the
+        login form is wired. Never raises — returns an error string instead.
+        Note: for the password we record only the VALUE LENGTH, never the
+        value itself, so the secret never lands in a dump.
+        """
+        try:
+            obj = self._cdp.send("DOM.resolveNode", {"nodeId": node_id})
+            oid = obj["object"]["objectId"]
+            fn = (
+                "function(){try{return JSON.stringify({"
+                "tag:this.tagName,"
+                "type:(this.getAttribute&&this.getAttribute('type'))||null,"
+                "id:this.id||null,"
+                "cls:this.className||null,"
+                "val_len:(typeof this.value==='string'?this.value.length:null),"
+                "disabled:!!this.disabled,"
+                "in_form:(this.closest&&this.closest('form'))?true:false,"
+                "html:(this.outerHTML||'').slice(0,400)"
+                "});}catch(e){return 'err:'+e;}}"
+            )
+            res = self._cdp.send("Runtime.callFunctionOn", {
+                "objectId": oid,
+                "functionDeclaration": fn,
+                "returnByValue": True,
             })
+            return res.get("result", {}).get("value")
+        except Exception as exc:
+            return f"<describe failed: {exc}>"
 
     def _find_login_elements(self):
         """Recorre el DOM (incluido shadow DOM closed via pierce=True) y
