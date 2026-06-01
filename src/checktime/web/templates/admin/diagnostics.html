@@ -68,9 +68,9 @@
                                     {% endif %}
                                 </div>
                                 {% if row.login_failure.png %}
-                                    <a href="{{ url_for('admin.diagnostics_file', category='login_failure', username=row.username, ext='png') }}"
+                                    <a href="{{ url_for('admin.diagnostics_file', category='login_failure', username=row.login_username, ext='png') }}"
                                        target="_blank" class="d-inline-block me-2">
-                                        <img src="{{ url_for('admin.diagnostics_file', category='login_failure', username=row.username, ext='png') }}"
+                                        <img src="{{ url_for('admin.diagnostics_file', category='login_failure', username=row.login_username, ext='png') }}"
                                              alt="login failure {{ row.username }}"
                                              style="max-width: 220px; max-height: 110px; border: 1px solid #ddd;">
                                     </a>
@@ -78,14 +78,14 @@
                                 <div class="mt-1 d-flex flex-wrap gap-2">
                                     {% if row.login_failure.html %}
                                         <a class="btn btn-sm btn-outline-primary"
-                                           href="{{ url_for('admin.diagnostics_file', category='login_failure', username=row.username, ext='html') }}"
+                                           href="{{ url_for('admin.diagnostics_file', category='login_failure', username=row.login_username, ext='html') }}"
                                            target="_blank">
                                             <i class="bi bi-code"></i> Ver HTML (source)
                                         </a>
                                     {% endif %}
                                     {% if row.login_failure.txt %}
                                         <a class="btn btn-sm btn-outline-primary"
-                                           href="{{ url_for('admin.diagnostics_file', category='login_failure', username=row.username, ext='txt') }}"
+                                           href="{{ url_for('admin.diagnostics_file', category='login_failure', username=row.login_username, ext='txt') }}"
                                            target="_blank">
                                             <i class="bi bi-file-text"></i> Ver metadatos
                                         </a>
