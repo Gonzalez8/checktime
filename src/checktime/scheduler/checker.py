@@ -153,6 +153,17 @@ class CheckJCClient:
         self._cdp = None
         self._timeout_ms = get_selenium_timeout() * 1000
 
+        # Diagnostic ring buffers — populated by the listeners installed in
+        # __enter__ so that when a login is rejected we can see exactly what
+        # CheckJC returned over the wire (status, JSON body of the auth XHR),
+        # what the page logged to console, and any uncaught JS errors. This
+        # is the missing piece when credentials are valid via the web but
+        # the bot is silently bounced back to /login. All are capped so a
+        # long-lived context can't grow memory unbounded.
+        self._net_events = []
+        self._console_events = []
+        self._page_errors = []
+
     def __enter__(self):
         if SIMULATION_MODE:
             logger.info(f"Simulation mode enabled for {self.username}")
@@ -185,11 +196,99 @@ class CheckJCClient:
         self._context.set_default_timeout(self._timeout_ms)
         self._page = self._context.new_page()
         self._cdp = self._context.new_cdp_session(self._page)
+        self._install_diagnostic_listeners()
         logger.info(
             "Chromium iniciado para %s (viewport=%dx%d)",
             self.username, viewport_w, viewport_h,
         )
         return self
+
+    # Cap how much we retain so the buffers can't grow without bound on a
+    # long-lived context (these are best-effort diagnostics, not a full HAR).
+    _MAX_NET_EVENTS = 80
+    _MAX_CONSOLE_EVENTS = 120
+    _MAX_PAGE_ERRORS = 40
+    _MAX_BODY_CHARS = 8000
+    # Resource types whose response body is worth keeping. Static assets
+    # (image/stylesheet/font/script) are noise; the auth call is an
+    # xhr/fetch and the page itself is a document.
+    _BODY_RESOURCE_TYPES = ("xhr", "fetch")
+    # Substrings that mark a request as login/auth-related so we can log it
+    # loudly to stdout (not just the dump) the moment it comes back.
+    _AUTH_URL_HINTS = ("login", "auth", "session", "token", "signin")
+
+    def _install_diagnostic_listeners(self):
+        """Attach response/console/pageerror listeners that feed the dump.
+
+        Best-effort: every handler swallows its own exceptions so a problem
+        capturing diagnostics can never break the real login flow.
+        """
+
+        def _on_response(response):
+            try:
+                req = response.request
+                rtype = req.resource_type
+                url = response.url
+                status = response.status
+                ctype = response.headers.get("content-type", "")
+                body = None
+                if rtype in self._BODY_RESOURCE_TYPES:
+                    try:
+                        body = response.text()
+                        if body and len(body) > self._MAX_BODY_CHARS:
+                            body = body[: self._MAX_BODY_CHARS] + "…[truncated]"
+                    except Exception:
+                        body = "<body unavailable>"
+                self._net_events.append({
+                    "method": req.method,
+                    "url": url,
+                    "status": status,
+                    "type": rtype,
+                    "content_type": ctype,
+                    "body": body,
+                })
+                if len(self._net_events) > self._MAX_NET_EVENTS:
+                    del self._net_events[: -self._MAX_NET_EVENTS]
+                # Surface auth-related XHRs to stdout immediately — this is
+                # the call that decides accept/reject, so we want it in the
+                # live logs even if the dump is later lost with the container.
+                low = url.lower()
+                if rtype in self._BODY_RESOURCE_TYPES and any(
+                    h in low for h in self._AUTH_URL_HINTS
+                ):
+                    logger.info(
+                        "Auth XHR for %s: %s %s -> %d (%s) body=%s",
+                        self.username, req.method, url, status, ctype,
+                        (body or "")[:1000],
+                    )
+            except Exception:
+                pass
+
+        def _on_console(msg):
+            try:
+                self._console_events.append(f"[{msg.type}] {msg.text}")
+                if len(self._console_events) > self._MAX_CONSOLE_EVENTS:
+                    del self._console_events[: -self._MAX_CONSOLE_EVENTS]
+            except Exception:
+                pass
+
+        def _on_page_error(err):
+            try:
+                self._page_errors.append(str(err))
+                if len(self._page_errors) > self._MAX_PAGE_ERRORS:
+                    del self._page_errors[: -self._MAX_PAGE_ERRORS]
+            except Exception:
+                pass
+
+        try:
+            self._page.on("response", _on_response)
+            self._page.on("console", _on_console)
+            self._page.on("pageerror", _on_page_error)
+        except Exception as exc:
+            logger.warning(
+                "Could not install diagnostic listeners for %s: %s",
+                self.username, exc,
+            )
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         for closer in (
@@ -633,34 +732,57 @@ class CheckJCClient:
             except Exception as exc:
                 logger.warning("Could not write login failure HTML for %s: %s",
                                self.username, exc)
-            # Screenshot — visual state of the page at the moment of failure
+            # Screenshot — full page so banners/toasts below the fold are
+            # captured too, not just the viewport. The reject reason is
+            # sometimes a toast that renders at the bottom of the document.
             try:
-                self._page.screenshot(path=base + ".png", full_page=False)
+                self._page.screenshot(path=base + ".png", full_page=True)
             except Exception as exc:
                 logger.warning("Could not screenshot login failure for %s: %s",
                                self.username, exc)
-            # Metadata sidecar — quick at-a-glance summary
+            # Metadata sidecar — quick at-a-glance summary, now including the
+            # network trace (auth XHR status + body), browser console, and
+            # any uncaught JS errors. This is the part that tells us WHY the
+            # login was rejected when the credentials are valid on the web.
             try:
                 cookies = self._context.cookies() if self._context else []
-                meta = (
-                    f"timestamp: {_dt.now().isoformat()}\n"
-                    f"user: {self.username}\n"
-                    f"subdomain: {self.subdomain}\n"
-                    f"final_url: {self._page.url}\n"
-                    f"login_page_body_size: {last_body_size}\n"
-                    f"after_submit_body_size: {len(body_html or '')}\n"
-                    f"user_agent: {_CHROME_UA}\n"
-                    f"cookies_count: {len(cookies)}\n"
-                    f"cookie_names: {[c.get('name') for c in cookies]}\n"
-                )
+                lines = [
+                    f"timestamp: {_dt.now().isoformat()}",
+                    f"user: {self.username}",
+                    f"subdomain: {self.subdomain}",
+                    f"final_url: {self._page.url}",
+                    f"login_page_body_size: {last_body_size}",
+                    f"after_submit_body_size: {len(body_html or '')}",
+                    f"user_agent: {_CHROME_UA}",
+                    f"cookies_count: {len(cookies)}",
+                    f"cookie_names: {[c.get('name') for c in cookies]}",
+                    "",
+                    "=== PAGE ERRORS (uncaught JS) ===",
+                ]
+                lines += self._page_errors or ["(none)"]
+                lines += ["", "=== CONSOLE ==="]
+                lines += self._console_events or ["(none)"]
+                lines += ["", "=== NETWORK (responses) ==="]
+                if self._net_events:
+                    for ev in self._net_events:
+                        lines.append(
+                            f"{ev['status']} {ev['method']} [{ev['type']}] "
+                            f"{ev['url']}  ({ev['content_type']})"
+                        )
+                        if ev.get("body"):
+                            lines.append(f"    body: {ev['body']}")
+                else:
+                    lines.append("(none captured)")
                 with open(base + ".txt", "w", encoding="utf-8") as f:
-                    f.write(meta)
+                    f.write("\n".join(lines) + "\n")
             except Exception as exc:
                 logger.warning("Could not write login failure metadata for %s: %s",
                                self.username, exc)
             logger.info(
-                "Login failure dump saved for %s at %s.{html,png,txt}",
-                self.username, base,
+                "Login failure dump saved for %s at %s.{html,png,txt} "
+                "(%d net events, %d console, %d page errors)",
+                self.username, base, len(self._net_events),
+                len(self._console_events), len(self._page_errors),
             )
         except Exception as exc:
             # Outer catch-all so the dump never breaks the real error path.
