@@ -74,16 +74,40 @@ class CheckJCCaptchaFailed(CheckJCError):
     """
 
 
+# Chrome major used to keep UA, Sec-CH-UA client hints and navigator
+# .userAgentData all in lock-step. InfoJC's report (28/05/2026) flagged
+# the literal "HeadlessChrome/135" token; the fix is two-fold:
+#   1) run Chromium in the *new* headless mode (no "HeadlessChrome" token
+#      in the UA or client hints), and
+#   2) present a fingerprint that is INTERNALLY COHERENT with the real
+#      host. The container is Linux x86_64, so we advertise a normal Linux
+#      desktop Chrome. Faking macOS on a Linux box would leave the real
+#      platform leaking through WebGL/navigator.platform — a mismatch that
+#      is itself a bot tell. A standard Linux Chrome is a perfectly common,
+#      non-blacklisted client.
+_CHROME_MAJOR = "147"
 _CHROME_UA = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    f"(KHTML, like Gecko) Chrome/{_CHROME_MAJOR}.0.0.0 Safari/537.36"
 )
+# Client-hint headers that Chrome 147 on Linux would send. Kept consistent
+# with _CHROME_UA so UA string and Sec-CH-UA never contradict each other.
+_SEC_CH_UA = (
+    f'"Chromium";v="{_CHROME_MAJOR}", '
+    f'"Google Chrome";v="{_CHROME_MAJOR}", '
+    '"Not_A Brand";v="24"'
+)
+_SEC_CH_UA_PLATFORM = '"Linux"'
 
 # Injected before any page script runs. Patches the most common headless
 # tells (navigator.webdriver, missing chrome object, plugins/languages
 # inconsistencies) that anti-bot stacks check for. Belt-and-braces on top
-# of --disable-blink-features=AutomationControlled, which alone leaves a
-# couple of these gaps depending on the Chromium build.
+# of --disable-blink-features=AutomationControlled and --headless=new,
+# which alone leave a couple of these gaps depending on the Chromium build.
+#
+# {MAJOR} is substituted at load time so navigator.userAgentData stays in
+# lock-step with _CHROME_UA / _SEC_CH_UA. Everything here describes a normal
+# Linux desktop Chrome — coherent with the real host, no macOS mismatch.
 _STEALTH_INIT_SCRIPT = """
 (() => {
   try {
@@ -102,6 +126,56 @@ _STEALTH_INIT_SCRIPT = """
   if (!window.chrome) {
     window.chrome = { runtime: {} };
   }
+  // userAgentData: in legacy headless this leaks a "HeadlessChrome" brand.
+  // Pin it to a normal Chrome on Linux so the high-entropy hints CheckJC
+  // can request never reveal automation, and match _CHROME_UA exactly.
+  try {
+    const brands = [
+      { brand: 'Chromium', version: '__MAJOR__' },
+      { brand: 'Google Chrome', version: '__MAJOR__' },
+      { brand: 'Not_A Brand', version: '24' },
+    ];
+    const uaData = {
+      brands: brands,
+      mobile: false,
+      platform: 'Linux',
+      getHighEntropyValues: (hints) => Promise.resolve({
+        architecture: 'x86',
+        bitness: '64',
+        brands: brands,
+        fullVersionList: brands.map(b => ({
+          brand: b.brand,
+          version: b.brand === 'Not_A Brand' ? '24.0.0.0' : '__MAJOR__.0.0.0',
+        })),
+        mobile: false,
+        model: '',
+        platform: 'Linux',
+        platformVersion: '6.6.0',
+        uaFullVersion: '__MAJOR__.0.0.0',
+        wow64: false,
+      }),
+      toJSON: function () { return this; },
+    };
+    Object.defineProperty(navigator, 'userAgentData', { get: () => uaData });
+  } catch (_) {}
+  // WebGL vendor/renderer: software headless reports "SwiftShader", a clear
+  // automation tell. Report a plausible Linux ANGLE/Mesa GPU instead, the
+  // same shape a real Linux Chrome exposes.
+  try {
+    const spoof = (proto) => {
+      if (!proto) return;
+      const orig = proto.getParameter;
+      proto.getParameter = function (p) {
+        if (p === 37445) return 'Google Inc. (Intel)';            // UNMASKED_VENDOR_WEBGL
+        if (p === 37446) {                                         // UNMASKED_RENDERER_WEBGL
+          return 'ANGLE (Intel, Mesa Intel(R) UHD Graphics (CML GT2), OpenGL 4.6)';
+        }
+        return orig.call(this, p);
+      };
+    };
+    spoof(window.WebGLRenderingContext && WebGLRenderingContext.prototype);
+    spoof(window.WebGL2RenderingContext && WebGL2RenderingContext.prototype);
+  } catch (_) {}
   const origQuery = window.navigator.permissions && window.navigator.permissions.query;
   if (origQuery) {
     window.navigator.permissions.query = (params) =>
@@ -110,7 +184,7 @@ _STEALTH_INIT_SCRIPT = """
         : origQuery(params);
   }
 })();
-"""
+""".replace("__MAJOR__", _CHROME_MAJOR)
 
 
 class CheckJCClient:
@@ -173,6 +247,10 @@ class CheckJCClient:
         self._browser = self._pw.chromium.launch(
             headless=True,
             args=[
+                # New headless mode: behaves like headful Chrome and, crucially,
+                # drops the "HeadlessChrome" token from the UA and Sec-CH-UA
+                # client hints that InfoJC's IDS blacklisted (report 28/05/2026).
+                "--headless=new",
                 "--no-sandbox",
                 "--disable-dev-shm-usage",
                 "--disable-blink-features=AutomationControlled",
@@ -190,6 +268,12 @@ class CheckJCClient:
             viewport={"width": viewport_w, "height": viewport_h},
             extra_http_headers={
                 "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
+                # Client hints coherent with _CHROME_UA. Without these the
+                # browser could still emit a "HeadlessChrome" Sec-CH-UA or a
+                # platform that contradicts the UA string.
+                "Sec-CH-UA": _SEC_CH_UA,
+                "Sec-CH-UA-Mobile": "?0",
+                "Sec-CH-UA-Platform": _SEC_CH_UA_PLATFORM,
             },
         )
         self._context.add_init_script(_STEALTH_INIT_SCRIPT)
