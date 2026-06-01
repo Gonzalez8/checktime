@@ -218,12 +218,21 @@ def diagnostics():
     user_manager = UserManager()
     rows = []
     for user in user_manager.list_users():
+        # Captcha dumps are written by the solver using the CheckTime
+        # app username (user.username). Login-failure dumps are written
+        # by the checker using the CheckJC login (user.checkjc_username,
+        # e.g. a DNI), which is what `self.username` resolves to there.
+        # They are NOT the same string, so we must look each category up
+        # under the name its own dumper used or the page shows "—" even
+        # though the file exists on disk.
         safe = _safe_username(user.username)
+        login_name = user.checkjc_username or user.username
+        safe_login = _safe_username(login_name)
         cap_png = os.path.join(_CAPTCHA_DUMP_DIR, f"{safe}.png")
         cap_txt = os.path.join(_CAPTCHA_DUMP_DIR, f"{safe}.txt")
-        log_png = os.path.join(_LOGIN_FAILURE_DIR, f"{safe}.png")
-        log_txt = os.path.join(_LOGIN_FAILURE_DIR, f"{safe}.txt")
-        log_html = os.path.join(_LOGIN_FAILURE_DIR, f"{safe}.html")
+        log_png = os.path.join(_LOGIN_FAILURE_DIR, f"{safe_login}.png")
+        log_txt = os.path.join(_LOGIN_FAILURE_DIR, f"{safe_login}.txt")
+        log_html = os.path.join(_LOGIN_FAILURE_DIR, f"{safe_login}.html")
 
         def _mtime(path):
             try:
@@ -233,6 +242,9 @@ def diagnostics():
 
         rows.append({
             "username": user.username,
+            # Name the login-failure files are actually stored under, so
+            # the template builds the download URL that resolves on disk.
+            "login_username": login_name,
             "user_id": user.id,
             "captcha": {
                 "png": os.path.exists(cap_png),
