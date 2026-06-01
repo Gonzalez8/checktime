@@ -567,6 +567,22 @@ class CheckJCClient:
         for line in self._form_debug:
             logger.info("FORM DEBUG %s -> %s", self.username, line)
 
+        # The submit button (#btn-login) ships `disabled` and is enabled by
+        # the form's own validation once both fields are valid. We observed
+        # it staying disabled even with both fields filled (val_len 9/21):
+        # Stencil attaches that validation listener AFTER its late hydration,
+        # so the input events from our initial keystrokes fired before the
+        # listener existed and the button never re-evaluated. Re-fire
+        # input/change now (listener is attached by submit time) so the
+        # button enables, then record whether it worked.
+        self._dispatch_input_events(user_node)
+        self._dispatch_input_events(pass_node)
+        self._page.wait_for_timeout(500)
+        self._form_debug.append(
+            f"login_button_after_events: {self._describe_node(btn_node)}"
+        )
+        logger.info("FORM DEBUG %s -> %s", self.username, self._form_debug[-1])
+
         # Humanizing mouse warmup before clicking submit: move the pointer
         # toward the button via a couple of intermediate positions instead
         # of teleporting. Cheap and avoids the "perfect-stillness" tell.
@@ -1025,6 +1041,32 @@ class CheckJCClient:
             "type": "mouseReleased", "x": x, "y": y,
             "button": "left", "buttons": 0, "clickCount": 1,
         })
+
+    def _dispatch_input_events(self, node_id):
+        """Re-fire input/change/keyup on a node so a framework that attached
+        its validation listener AFTER our initial keystrokes (late Stencil
+        hydration) re-evaluates the form and enables the submit button.
+
+        Best-effort: swallows its own errors so it never breaks login.
+        """
+        try:
+            obj = self._cdp.send("DOM.resolveNode", {"nodeId": node_id})
+            oid = obj["object"]["objectId"]
+            fn = (
+                "function(){"
+                "this.dispatchEvent(new Event('input',{bubbles:true}));"
+                "this.dispatchEvent(new Event('change',{bubbles:true}));"
+                "this.dispatchEvent(new KeyboardEvent('keyup',{bubbles:true}));"
+                "return true;}"
+            )
+            self._cdp.send("Runtime.callFunctionOn", {
+                "objectId": oid,
+                "functionDeclaration": fn,
+                "returnByValue": True,
+            })
+        except Exception as exc:
+            logger.warning("Could not dispatch input events for %s: %s",
+                           self.username, exc)
 
     def _describe_node(self, node_id):
         """Return a short JSON description of a DOM node (tag, type, id,
