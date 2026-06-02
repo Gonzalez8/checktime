@@ -85,7 +85,12 @@ class CheckJCCaptchaFailed(CheckJCError):
 #      platform leaking through WebGL/navigator.platform — a mismatch that
 #      is itself a bot tell. A standard Linux Chrome is a perfectly common,
 #      non-blacklisted client.
-_CHROME_MAJOR = "147"
+#
+# The value MUST match the Chromium that rebrowser-playwright actually
+# bundles (1.52.0 -> Chromium 136). Declaring a version newer than the real
+# engine is itself a detectable mismatch (feature probing, JS quirks), so we
+# keep UA / Sec-CH-UA / userAgentData in lock-step with the running engine.
+_CHROME_MAJOR = "136"
 _CHROME_UA = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     f"(KHTML, like Gecko) Chrome/{_CHROME_MAJOR}.0.0.0 Safari/537.36"
