@@ -978,6 +978,13 @@ class CheckJCClient:
         constant-cadence fingerprint.
         """
         try:
+            # Travel the pointer to the field like a human (curved-ish path,
+            # not a teleport) and then click it. Both the movement and the
+            # click go through CDP's input pipeline, so every event carries
+            # isTrusted=true — indistinguishable from a physical mouse at the
+            # JS level, which is the most "real" interaction automation can
+            # produce.
+            self._human_mouse_warmup_to(node_id)
             self._cdp_click(node_id)
         except Exception as exc:
             logger.warning("Real click to focus failed for %s (%s); "
