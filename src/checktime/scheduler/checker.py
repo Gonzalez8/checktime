@@ -962,15 +962,29 @@ class CheckJCClient:
         self._cdp.send("DOM.focus", {"nodeId": node_id})
 
     def _human_type_into(self, node_id, text: str):
-        """Focus the node and type its text character-by-character via the
-        Page keyboard so real keydown/keypress/keyup events fire.
+        """Focus the field with a REAL mouse click, then type it
+        character-by-character via the Page keyboard so real
+        keydown/keypress/keyup events fire.
 
-        Necessary because CheckJC's Stencil form validation may listen for
-        input events; `Input.insertText` only mutates value and was flagged
-        by InfoJC's IDS as "manipulation of fields". Per-char random delay
-        also kills the constant-cadence fingerprint.
+        We focus with an actual mouse click (move -> press -> release on the
+        field) instead of CDP `DOM.focus`. The Stencil `<sd-login>` component
+        only starts tracking a field's value after a *genuine* focus/click
+        interaction; with programmatic focus its internal state stayed empty
+        and the submit button (#btn-login) never enabled. A real click is the
+        honest, human way to hand the field focus — no field/control forcing.
+
+        `Input.insertText` is avoided on purpose (InfoJC flagged it as
+        "manipulation of fields"); per-char random delay also kills the
+        constant-cadence fingerprint.
         """
-        self._cdp_focus(node_id)
+        try:
+            self._cdp_click(node_id)
+        except Exception as exc:
+            logger.warning("Real click to focus failed for %s (%s); "
+                           "falling back to DOM.focus", self.username, exc)
+            self._cdp_focus(node_id)
+        # Small settle so the component registers the focus before keys.
+        self._page.wait_for_timeout(random.randint(120, 300))
         delay_min = max(0, get_keystroke_delay_min_ms())
         delay_max = max(delay_min, get_keystroke_delay_max_ms())
         for ch in text:
