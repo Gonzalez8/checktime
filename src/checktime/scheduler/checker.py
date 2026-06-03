@@ -3,7 +3,16 @@ import logging
 import random
 import re
 from typing import Optional
-from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
+# rebrowser-playwright is a patched drop-in but, on PyPI/Python, it ships
+# under the `rebrowser_playwright` module name (NOT `playwright`). Prefer it
+# when present (it removes the Runtime.enable CDP leak), and fall back to
+# stock playwright so local dev / tests without the fork still work.
+try:
+    from rebrowser_playwright.sync_api import (
+        sync_playwright, TimeoutError as PWTimeout,
+    )
+except ModuleNotFoundError:
+    from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 
 from checktime.shared.config import (
     get_captcha_click_delay_max_ms,
@@ -90,18 +99,11 @@ class CheckJCCaptchaFailed(CheckJCError):
 # bundles (1.52.0 -> Chromium 136). Declaring a version newer than the real
 # engine is itself a detectable mismatch (feature probing, JS quirks), so we
 # keep UA / Sec-CH-UA / userAgentData in lock-step with the running engine.
+# Fallback only. The REAL value is read from the launched engine
+# (browser.version) at runtime, so UA/Sec-CH-UA/userAgentData always match
+# the Chromium that rebrowser-playwright actually ships — declaring a version
+# different from the running engine is itself a detectable mismatch.
 _CHROME_MAJOR = "136"
-_CHROME_UA = (
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-    f"(KHTML, like Gecko) Chrome/{_CHROME_MAJOR}.0.0.0 Safari/537.36"
-)
-# Client-hint headers that Chrome 147 on Linux would send. Kept consistent
-# with _CHROME_UA so UA string and Sec-CH-UA never contradict each other.
-_SEC_CH_UA = (
-    f'"Chromium";v="{_CHROME_MAJOR}", '
-    f'"Google Chrome";v="{_CHROME_MAJOR}", '
-    '"Not_A Brand";v="24"'
-)
 _SEC_CH_UA_PLATFORM = '"Linux"'
 
 # Injected before any page script runs. Patches the most common headless
@@ -110,10 +112,11 @@ _SEC_CH_UA_PLATFORM = '"Linux"'
 # of --disable-blink-features=AutomationControlled and --headless=new,
 # which alone leave a couple of these gaps depending on the Chromium build.
 #
-# {MAJOR} is substituted at load time so navigator.userAgentData stays in
-# lock-step with _CHROME_UA / _SEC_CH_UA. Everything here describes a normal
-# Linux desktop Chrome — coherent with the real host, no macOS mismatch.
-_STEALTH_INIT_SCRIPT = """
+# __MAJOR__ is substituted per-session (from the real engine version) so
+# navigator.userAgentData stays in lock-step with the UA / Sec-CH-UA.
+# Everything here describes a normal Linux desktop Chrome — coherent with the
+# real host, no macOS mismatch.
+_STEALTH_INIT_SCRIPT_TEMPLATE = """
 (() => {
   try {
     Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
@@ -189,7 +192,28 @@ _STEALTH_INIT_SCRIPT = """
         : origQuery(params);
   }
 })();
-""".replace("__MAJOR__", _CHROME_MAJOR)
+"""
+
+
+def _fingerprint_for_major(major: str):
+    """Build (user_agent, sec_ch_ua, stealth_script) for a Chrome major so the
+    UA string, Sec-CH-UA client hints and navigator.userAgentData all match
+    the real engine version that is actually running."""
+    ua = (
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+        f"(KHTML, like Gecko) Chrome/{major}.0.0.0 Safari/537.36"
+    )
+    sec_ch_ua = (
+        f'"Chromium";v="{major}", '
+        f'"Google Chrome";v="{major}", '
+        '"Not_A Brand";v="24"'
+    )
+    script = _STEALTH_INIT_SCRIPT_TEMPLATE.replace("__MAJOR__", major)
+    return ua, sec_ch_ua, script
+
+
+# Module-level defaults, used if the engine version can't be read at runtime.
+_CHROME_UA, _SEC_CH_UA, _STEALTH_INIT_SCRIPT = _fingerprint_for_major(_CHROME_MAJOR)
 
 
 class CheckJCClient:
@@ -239,6 +263,12 @@ class CheckJCClient:
         # is the missing piece when credentials are valid via the web but
         # the bot is silently bounced back to /login. All are capped so a
         # long-lived context can't grow memory unbounded.
+        # Fingerprint actually used this session. Rebuilt in __enter__ from
+        # the real engine version so UA/Sec-CH-UA/userAgentData never lie
+        # about the Chromium that's running. Module defaults until then.
+        self._chrome_ua = _CHROME_UA
+        self._sec_ch_ua = _SEC_CH_UA
+        self._stealth_script = _STEALTH_INIT_SCRIPT
         self._net_events = []
         self._console_events = []
         self._page_errors = []
@@ -272,34 +302,47 @@ class CheckJCClient:
                 "--disable-blink-features=AutomationControlled",
             ],
         )
+        # Derive the fingerprint from the REAL engine version so UA,
+        # Sec-CH-UA and navigator.userAgentData all agree with the Chromium
+        # that's actually running (rebrowser-playwright may bundle a different
+        # version than we hardcoded). Falls back to the module default.
+        try:
+            engine_version = self._browser.version or ""
+            major = engine_version.split(".")[0] or _CHROME_MAJOR
+        except Exception:
+            engine_version = "?"
+            major = _CHROME_MAJOR
+        self._chrome_ua, self._sec_ch_ua, self._stealth_script = (
+            _fingerprint_for_major(major)
+        )
         # Small viewport randomization so two consecutive sessions don't
         # produce identical client-side fingerprints. Stays close enough
         # to 1280x800 that layout assumptions still hold.
         viewport_w = 1280 + random.randint(-40, 40)
         viewport_h = 800 + random.randint(-30, 30)
         self._context = self._browser.new_context(
-            user_agent=_CHROME_UA,
+            user_agent=self._chrome_ua,
             locale="es-ES",
             timezone_id="Europe/Madrid",
             viewport={"width": viewport_w, "height": viewport_h},
             extra_http_headers={
                 "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
-                # Client hints coherent with _CHROME_UA. Without these the
-                # browser could still emit a "HeadlessChrome" Sec-CH-UA or a
-                # platform that contradicts the UA string.
-                "Sec-CH-UA": _SEC_CH_UA,
+                # Client hints coherent with the UA. Without these the browser
+                # could still emit a "HeadlessChrome" Sec-CH-UA or a platform
+                # that contradicts the UA string.
+                "Sec-CH-UA": self._sec_ch_ua,
                 "Sec-CH-UA-Mobile": "?0",
                 "Sec-CH-UA-Platform": _SEC_CH_UA_PLATFORM,
             },
         )
-        self._context.add_init_script(_STEALTH_INIT_SCRIPT)
+        self._context.add_init_script(self._stealth_script)
         self._context.set_default_timeout(self._timeout_ms)
         self._page = self._context.new_page()
         self._cdp = self._context.new_cdp_session(self._page)
         self._install_diagnostic_listeners()
         logger.info(
-            "Chromium iniciado para %s (viewport=%dx%d)",
-            self.username, viewport_w, viewport_h,
+            "Chromium iniciado para %s (engine=%s, UA major=%s, viewport=%dx%d)",
+            self.username, engine_version, major, viewport_w, viewport_h,
         )
         return self
 
@@ -909,7 +952,7 @@ class CheckJCClient:
                     f"final_url: {self._page.url}",
                     f"login_page_body_size: {last_body_size}",
                     f"after_submit_body_size: {len(body_html or '')}",
-                    f"user_agent: {_CHROME_UA}",
+                    f"user_agent: {self._chrome_ua}",
                     f"cookies_count: {len(cookies)}",
                     f"cookie_names: {[c.get('name') for c in cookies]}",
                     "",
