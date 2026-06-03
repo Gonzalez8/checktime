@@ -625,11 +625,28 @@ class CheckJCClient:
         # button enables, then record whether it worked.
         self._dispatch_input_events(user_node)
         self._dispatch_input_events(pass_node)
-        self._page.wait_for_timeout(500)
+
+        # Wait — like a patient human — for the form's own validation to
+        # enable the submit button, polling its disabled state once a second.
+        # This both (a) FIXES the case where the button enables a few seconds
+        # after we type (we were clicking too early) and (b) DIAGNOSES the
+        # other case: if it stays disabled for the full window, the gate is
+        # not timing but the component/sensor refusing our input. Pure
+        # observation — nothing is forced.
+        enabled = False
+        self._form_debug.append("button_enable_poll:")
+        for i in range(15):
+            dis = self._button_disabled(btn_node)
+            self._form_debug.append(f"  t+{i}s disabled={dis}")
+            if dis is False:
+                enabled = True
+                break
+            self._page.wait_for_timeout(1000)
         self._form_debug.append(
             f"login_button_after_events: {self._describe_node(btn_node)}"
         )
-        logger.info("FORM DEBUG %s -> %s", self.username, self._form_debug[-1])
+        logger.info("Submit button enabled within poll for %s: %s",
+                    self.username, enabled)
 
         # Humanizing mouse warmup before clicking submit: move the pointer
         # toward the button via a couple of intermediate positions instead
@@ -1136,6 +1153,21 @@ class CheckJCClient:
         except Exception as exc:
             logger.warning("Could not dispatch input events for %s: %s",
                            self.username, exc)
+
+    def _button_disabled(self, node_id):
+        """Return True/False for the node's `disabled` state, or None if it
+        can't be read. Lightweight (used in the enable poll loop)."""
+        try:
+            obj = self._cdp.send("DOM.resolveNode", {"nodeId": node_id})
+            oid = obj["object"]["objectId"]
+            res = self._cdp.send("Runtime.callFunctionOn", {
+                "objectId": oid,
+                "functionDeclaration": "function(){return !!this.disabled;}",
+                "returnByValue": True,
+            })
+            return res.get("result", {}).get("value")
+        except Exception:
+            return None
 
     def _describe_node(self, node_id):
         """Return a short JSON description of a DOM node (tag, type, id,
