@@ -30,8 +30,12 @@ COPY . .
 
 RUN pip install --no-cache-dir -e .
 RUN pip install --no-cache-dir supervisor
-# Descarga Chromium gestionado por Playwright (~330 MB)
-RUN python -m playwright install chromium
+# Descarga Chromium gestionado por Playwright (~330 MB). El paquete
+# rebrowser-playwright expone el modulo como `rebrowser_playwright` (no
+# `playwright`), asi que ese es el CLI correcto; el fallback cubre el caso
+# de playwright estandar en dev.
+RUN python -m rebrowser_playwright install chromium \
+    || python -m playwright install chromium
 
 ENV PYTHONPATH=/app
 
