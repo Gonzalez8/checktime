@@ -1,4 +1,7 @@
-playwright>=1.47.0
+# Drop-in de Playwright parcheado (rebrowser-patches) para evitar la
+# deteccion de automatizacion por el leak de Runtime.enable (CDP).
+# Mismo import "playwright"; no requiere cambios en el codigo.
+rebrowser-playwright==1.52.0
 python-dotenv==1.0.1
 schedule==1.2.1
 python-telegram-bot==20.8
