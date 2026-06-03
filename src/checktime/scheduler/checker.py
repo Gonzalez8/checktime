@@ -85,7 +85,12 @@ class CheckJCCaptchaFailed(CheckJCError):
 #      platform leaking through WebGL/navigator.platform — a mismatch that
 #      is itself a bot tell. A standard Linux Chrome is a perfectly common,
 #      non-blacklisted client.
-_CHROME_MAJOR = "147"
+#
+# The value MUST match the Chromium that rebrowser-playwright actually
+# bundles (1.52.0 -> Chromium 136). Declaring a version newer than the real
+# engine is itself a detectable mismatch (feature probing, JS quirks), so we
+# keep UA / Sec-CH-UA / userAgentData in lock-step with the running engine.
+_CHROME_MAJOR = "136"
 _CHROME_UA = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     f"(KHTML, like Gecko) Chrome/{_CHROME_MAJOR}.0.0.0 Safari/537.36"
@@ -962,15 +967,36 @@ class CheckJCClient:
         self._cdp.send("DOM.focus", {"nodeId": node_id})
 
     def _human_type_into(self, node_id, text: str):
-        """Focus the node and type its text character-by-character via the
-        Page keyboard so real keydown/keypress/keyup events fire.
+        """Focus the field with a REAL mouse click, then type it
+        character-by-character via the Page keyboard so real
+        keydown/keypress/keyup events fire.
 
-        Necessary because CheckJC's Stencil form validation may listen for
-        input events; `Input.insertText` only mutates value and was flagged
-        by InfoJC's IDS as "manipulation of fields". Per-char random delay
-        also kills the constant-cadence fingerprint.
+        We focus with an actual mouse click (move -> press -> release on the
+        field) instead of CDP `DOM.focus`. The Stencil `<sd-login>` component
+        only starts tracking a field's value after a *genuine* focus/click
+        interaction; with programmatic focus its internal state stayed empty
+        and the submit button (#btn-login) never enabled. A real click is the
+        honest, human way to hand the field focus — no field/control forcing.
+
+        `Input.insertText` is avoided on purpose (InfoJC flagged it as
+        "manipulation of fields"); per-char random delay also kills the
+        constant-cadence fingerprint.
         """
-        self._cdp_focus(node_id)
+        try:
+            # Travel the pointer to the field like a human (curved-ish path,
+            # not a teleport) and then click it. Both the movement and the
+            # click go through CDP's input pipeline, so every event carries
+            # isTrusted=true — indistinguishable from a physical mouse at the
+            # JS level, which is the most "real" interaction automation can
+            # produce.
+            self._human_mouse_warmup_to(node_id)
+            self._cdp_click(node_id)
+        except Exception as exc:
+            logger.warning("Real click to focus failed for %s (%s); "
+                           "falling back to DOM.focus", self.username, exc)
+            self._cdp_focus(node_id)
+        # Small settle so the component registers the focus before keys.
+        self._page.wait_for_timeout(random.randint(120, 300))
         delay_min = max(0, get_keystroke_delay_min_ms())
         delay_max = max(delay_min, get_keystroke_delay_max_ms())
         for ch in text:

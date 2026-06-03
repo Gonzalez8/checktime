@@ -9,7 +9,11 @@ setup(
         "python-dotenv>=0.19.0",
         "requests>=2.26.0",
         "schedule>=1.1.0",
-        "playwright>=1.47.0",
+        # Drop-in de Playwright parcheado (rebrowser-patches): elimina el
+        # leak de Runtime.enable por CDP que los anti-bot (Cloudflare,
+        # DataDome, y al parecer el sensor de CheckJC/InfoJC) detectan para
+        # identificar automatizacion. Mismo namespace de import "playwright".
+        "rebrowser-playwright==1.52.0",
         "python-telegram-bot>=20.8",
         "flask>=2.3.3",
         "flask-sqlalchemy>=3.1.1",

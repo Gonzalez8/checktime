@@ -35,6 +35,11 @@ RUN python -m playwright install chromium
 
 ENV PYTHONPATH=/app
 
+# Activa el fix de rebrowser-patches para el leak de Runtime.enable (CDP).
+# "addBinding" es el modo recomendado/por defecto; ponlo a "0" para
+# desactivarlo temporalmente y comparar comportamiento en diagnostico.
+ENV REBROWSER_PATCHES_RUNTIME_FIX_MODE=addBinding
+
 RUN mkdir -p /var/log/checktime && chmod 777 /var/log/checktime
 RUN mkdir -p /app/config && chmod 777 /app/config
 
