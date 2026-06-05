@@ -118,33 +118,154 @@ _SEC_CH_UA_PLATFORM = '"Linux"'
 # real host, no macOS mismatch.
 _STEALTH_INIT_SCRIPT_TEMPLATE = """
 (() => {
+  // ----------------------------------------------------------------------
+  // toString leak guard. Anti-bot code often inspects our spoofs via
+  // `fn.toString()` (or `Object.getOwnPropertyDescriptor(navigator,'x').get
+  // .toString()`). A native getter prints "function get x() { [native code]
+  // }"; our arrow/closure prints its source, which is a dead giveaway.
+  // We proxy Function.prototype.toString so any function we register reports
+  // a native-looking string. Register a spoof with markNative(fn, 'name').
+  // ----------------------------------------------------------------------
+  const _spoofed = new WeakMap();
+  const _origToString = Function.prototype.toString;
+  const markNative = (fn, name) => {
+    try {
+      _spoofed.set(fn, 'function ' + (name || fn.name || '') +
+        '() { [native code] }');
+    } catch (_) {}
+    return fn;
+  };
+  try {
+    const proxyToString = new Proxy(_origToString, {
+      apply(target, thisArg, args) {
+        if (_spoofed.has(thisArg)) return _spoofed.get(thisArg);
+        return Reflect.apply(target, thisArg, args);
+      },
+    });
+    // The proxy must also report native for ITS OWN toString.
+    _spoofed.set(proxyToString, 'function toString() { [native code] }');
+    Function.prototype.toString = proxyToString;
+  } catch (_) {}
+
+  // Helper: define a property with a getter that itself reports native code.
+  const defineNativeGetter = (obj, prop, getter, name) => {
+    try {
+      markNative(getter, name || ('get ' + prop));
+      Object.defineProperty(obj, prop, { get: getter, configurable: true });
+    } catch (_) {}
+  };
+
   // navigator.webdriver: a REAL Chrome returns `false`, not `undefined`.
-  // Returning undefined (old stealth advice) is itself anomalous and a
-  // sensor that checks `webdriver === false` would still flag us — which is
-  // very likely why CheckJC kept the login button disabled. Force the human
-  // value `false`. (--disable-blink-features=AutomationControlled usually
-  // already yields false; this guarantees it and fixes builds where it's
-  // still true.)
+  // Returning undefined (old stealth advice) is itself anomalous; force the
+  // human value `false`.
   try {
     if (navigator.webdriver !== false) {
-      Object.defineProperty(navigator, 'webdriver', {
-        get: () => false, configurable: true,
-      });
+      defineNativeGetter(navigator, 'webdriver', () => false, 'get webdriver');
     }
   } catch (_) {}
+
+  defineNativeGetter(navigator, 'languages',
+    () => ['es-ES', 'es', 'en-US', 'en'], 'get languages');
+
+  // navigator.platform / vendor / hardware: must be coherent with a Linux
+  // x86_64 desktop Chrome (matches the UA). The old plugins=[1,2,3,4,5] was
+  // a tell (no real Chrome returns bare integers) — build a realistic
+  // PluginArray of the 5 PDF entries modern Chrome exposes instead.
+  defineNativeGetter(navigator, 'platform', () => 'Linux x86_64', 'get platform');
+  defineNativeGetter(navigator, 'vendor', () => 'Google Inc.', 'get vendor');
+  defineNativeGetter(navigator, 'hardwareConcurrency', () => 8,
+    'get hardwareConcurrency');
+  defineNativeGetter(navigator, 'deviceMemory', () => 8, 'get deviceMemory');
+  defineNativeGetter(navigator, 'maxTouchPoints', () => 0, 'get maxTouchPoints');
+
+  // Realistic plugins / mimeTypes. Modern Chrome ships 5 PDF "plugins" all
+  // backed by the internal PDF viewer. Shape them like real Plugin objects.
   try {
-    Object.defineProperty(navigator, 'languages', {
-      get: () => ['es-ES', 'es', 'en-US', 'en'],
-    });
+    const pdfNames = [
+      'PDF Viewer', 'Chrome PDF Viewer', 'Chromium PDF Viewer',
+      'Microsoft Edge PDF Viewer', 'WebKit built-in PDF',
+    ];
+    const mimeA = { type: 'application/pdf', suffixes: 'pdf', description: 'Portable Document Format' };
+    const mimeB = { type: 'text/pdf', suffixes: 'pdf', description: 'Portable Document Format' };
+    const plugins = pdfNames.map((n) => ({
+      name: n, filename: 'internal-pdf-viewer',
+      description: 'Portable Document Format', length: 2,
+      0: mimeA, 1: mimeB,
+      item() { return mimeA; }, namedItem() { return mimeA; },
+    }));
+    plugins.item = function (i) { return this[i] || null; };
+    plugins.namedItem = function (n) {
+      return this.find((p) => p.name === n) || null;
+    };
+    plugins.refresh = function () {};
+    defineNativeGetter(navigator, 'plugins', () => plugins, 'get plugins');
+    const mimeTypes = [mimeA, mimeB];
+    mimeTypes.item = function (i) { return this[i] || null; };
+    mimeTypes.namedItem = function (t) {
+      return this.find((m) => m.type === t) || null;
+    };
+    defineNativeGetter(navigator, 'mimeTypes', () => mimeTypes, 'get mimeTypes');
   } catch (_) {}
+
+  // NetworkInformation (navigator.connection). Headless may omit it.
   try {
-    Object.defineProperty(navigator, 'plugins', {
-      get: () => [1, 2, 3, 4, 5],
-    });
+    if (!navigator.connection) {
+      defineNativeGetter(navigator, 'connection', () => ({
+        effectiveType: '4g', rtt: 50, downlink: 10, saveData: false,
+        onchange: null,
+      }), 'get connection');
+    }
   } catch (_) {}
-  if (!window.chrome) {
-    window.chrome = { runtime: {} };
-  }
+
+  // window.chrome: a real Chrome exposes app/runtime/csi/loadTimes. The bare
+  // {runtime:{}} we had before is itself suspicious. Provide a fuller shape.
+  try {
+    if (!window.chrome || !window.chrome.runtime) {
+      window.chrome = window.chrome || {};
+      window.chrome.runtime = window.chrome.runtime || {
+        connect: function () {}, sendMessage: function () {},
+        onMessage: { addListener: function () {} },
+      };
+      window.chrome.app = window.chrome.app || {
+        isInstalled: false,
+        InstallState: { DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed' },
+        RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' },
+      };
+      window.chrome.csi = window.chrome.csi || function () {
+        return { startE: Date.now(), onloadT: Date.now(), pageT: 1, tran: 15 };
+      };
+      window.chrome.loadTimes = window.chrome.loadTimes || function () {
+        return {
+          requestTime: Date.now() / 1000, startLoadTime: Date.now() / 1000,
+          commitLoadTime: Date.now() / 1000, finishLoadTime: Date.now() / 1000,
+          firstPaintTime: Date.now() / 1000, navigationType: 'Other',
+          wasFetchedViaSpdy: true, wasNpnNegotiated: true, npnNegotiatedProtocol: 'h2',
+          wasAlternateProtocolAvailable: false, connectionInfo: 'h2',
+        };
+      };
+      markNative(window.chrome.csi, 'csi');
+      markNative(window.chrome.loadTimes, 'loadTimes');
+    }
+  } catch (_) {}
+
+  // screen / window outer dims: headless commonly reports outerWidth/Height
+  // as 0 and a screen that contradicts the viewport. Make them coherent with
+  // the inner viewport (a maximized desktop window).
+  try {
+    const iw = window.innerWidth || 1280;
+    const ih = window.innerHeight || 800;
+    if (!window.outerWidth)  Object.defineProperty(window, 'outerWidth',  { get: () => iw, configurable: true });
+    if (!window.outerHeight) Object.defineProperty(window, 'outerHeight', { get: () => ih + 74, configurable: true });
+    const sw = Math.max(iw, 1280);
+    const sh = Math.max(ih + 74, 800);
+    defineNativeGetter(screen, 'width', () => sw, 'get width');
+    defineNativeGetter(screen, 'height', () => sh, 'get height');
+    defineNativeGetter(screen, 'availWidth', () => sw, 'get availWidth');
+    defineNativeGetter(screen, 'availHeight', () => sh - 27, 'get availHeight');
+    defineNativeGetter(screen, 'colorDepth', () => 24, 'get colorDepth');
+    defineNativeGetter(screen, 'pixelDepth', () => 24, 'get pixelDepth');
+  } catch (_) {}
+
   // userAgentData: in legacy headless this leaks a "HeadlessChrome" brand.
   // Pin it to a normal Chrome on Linux so the high-entropy hints CheckJC
   // can request never reveal automation, and match _CHROME_UA exactly.
@@ -154,54 +275,63 @@ _STEALTH_INIT_SCRIPT_TEMPLATE = """
       { brand: 'Google Chrome', version: '__MAJOR__' },
       { brand: 'Not_A Brand', version: '24' },
     ];
+    const getHEV = (hints) => Promise.resolve({
+      architecture: 'x86',
+      bitness: '64',
+      brands: brands,
+      fullVersionList: brands.map(b => ({
+        brand: b.brand,
+        version: b.brand === 'Not_A Brand' ? '24.0.0.0' : '__MAJOR__.0.0.0',
+      })),
+      mobile: false,
+      model: '',
+      platform: 'Linux',
+      platformVersion: '6.6.0',
+      uaFullVersion: '__MAJOR__.0.0.0',
+      wow64: false,
+    });
+    markNative(getHEV, 'getHighEntropyValues');
     const uaData = {
       brands: brands,
       mobile: false,
       platform: 'Linux',
-      getHighEntropyValues: (hints) => Promise.resolve({
-        architecture: 'x86',
-        bitness: '64',
-        brands: brands,
-        fullVersionList: brands.map(b => ({
-          brand: b.brand,
-          version: b.brand === 'Not_A Brand' ? '24.0.0.0' : '__MAJOR__.0.0.0',
-        })),
-        mobile: false,
-        model: '',
-        platform: 'Linux',
-        platformVersion: '6.6.0',
-        uaFullVersion: '__MAJOR__.0.0.0',
-        wow64: false,
-      }),
+      getHighEntropyValues: getHEV,
       toJSON: function () { return this; },
     };
-    Object.defineProperty(navigator, 'userAgentData', { get: () => uaData });
+    defineNativeGetter(navigator, 'userAgentData', () => uaData, 'get userAgentData');
   } catch (_) {}
+
   // WebGL vendor/renderer: software headless reports "SwiftShader", a clear
-  // automation tell. Report a plausible Linux ANGLE/Mesa GPU instead, the
-  // same shape a real Linux Chrome exposes.
+  // automation tell. Report a plausible Linux ANGLE/Mesa GPU instead.
   try {
     const spoof = (proto) => {
       if (!proto) return;
       const orig = proto.getParameter;
-      proto.getParameter = function (p) {
+      const patched = function (p) {
         if (p === 37445) return 'Google Inc. (Intel)';            // UNMASKED_VENDOR_WEBGL
         if (p === 37446) {                                         // UNMASKED_RENDERER_WEBGL
           return 'ANGLE (Intel, Mesa Intel(R) UHD Graphics (CML GT2), OpenGL 4.6)';
         }
         return orig.call(this, p);
       };
+      markNative(patched, 'getParameter');
+      proto.getParameter = patched;
     };
     spoof(window.WebGLRenderingContext && WebGLRenderingContext.prototype);
     spoof(window.WebGL2RenderingContext && WebGL2RenderingContext.prototype);
   } catch (_) {}
-  const origQuery = window.navigator.permissions && window.navigator.permissions.query;
-  if (origQuery) {
-    window.navigator.permissions.query = (params) =>
-      params && params.name === 'notifications'
-        ? Promise.resolve({ state: Notification.permission })
-        : origQuery(params);
-  }
+
+  try {
+    const origQuery = window.navigator.permissions && window.navigator.permissions.query;
+    if (origQuery) {
+      const patchedQuery = (params) =>
+        params && params.name === 'notifications'
+          ? Promise.resolve({ state: Notification.permission })
+          : origQuery(params);
+      markNative(patchedQuery, 'query');
+      window.navigator.permissions.query = patchedQuery;
+    }
+  } catch (_) {}
 })();
 """
 
@@ -622,6 +752,7 @@ class CheckJCClient:
             f"user_input:    {self._describe_node(user_node)}",
             f"pass_input:    {self._describe_node(pass_node)}",
             f"login_button:  {self._describe_node(btn_node)}",
+            f"form_element:  {self._describe_form(btn_node)}",
         ]
         for line in self._form_debug:
             logger.info("FORM DEBUG %s -> %s", self.username, line)
@@ -659,13 +790,43 @@ class CheckJCClient:
         logger.info("Submit button enabled within poll for %s: %s",
                     self.username, enabled)
 
-        # Humanizing mouse warmup before clicking submit: move the pointer
-        # toward the button via a couple of intermediate positions instead
-        # of teleporting. Cheap and avoids the "perfect-stillness" tell.
+        # Re-fetch btn_node after the poll: when navigator.webdriver=false is
+        # accepted, Stencil may re-render the shadow DOM, orphaning the nodeId
+        # captured before typing. DOM.resolveNode still resolves detached nodes
+        # (they stay in CDP heap until GC), so disabled=False alone doesn't
+        # prove the node is mounted in the live tree. A fresh DOM walk
+        # guarantees we click the actual mounted element.
+        if enabled:
+            try:
+                _, _, btn_node = self._find_login_elements()
+                self._form_debug.append(f"btn_node_refreshed: {btn_node}")
+                logger.info("Button node refreshed to %s for %s", btn_node, self.username)
+            except Exception as exc:
+                logger.warning("Button re-fetch failed for %s: %s; using original",
+                               self.username, exc)
+                self._form_debug.append(f"btn_node_refresh_failed: {exc}")
+
+        # Humanizing mouse warmup before clicking submit.
         self._human_mouse_warmup_to(btn_node)
         self._page.wait_for_timeout(random.randint(200, 500))
-        self._cdp_click(btn_node)
-        logger.info("Login button clicked for %s", self.username)
+
+        # Playwright's pierce locator finds the element via CDP-level DOM
+        # traversal (guaranteed live reference) and dispatches trusted CDP
+        # Input events — more reliable for closed shadow DOM than our manual
+        # DOM.getBoxModel approach with a potentially-stale nodeId.
+        btn_clicked = False
+        try:
+            self._page.locator(":pierce(#btn-login)").click(timeout=5000)
+            btn_clicked = True
+            logger.info("Login button clicked via pierce for %s", self.username)
+        except Exception as exc:
+            logger.warning("Pierce click failed for %s: %s; falling back to CDP",
+                           self.username, exc)
+            self._form_debug.append(f"pierce_click_failed: {exc}")
+
+        if not btn_clicked:
+            self._cdp_click(btn_node)
+            logger.info("Login button clicked via CDP for %s", self.username)
 
         # Esperar a que el navegador salga de /login. Si tras N seg
         # seguimos ahí, fue rechazo. NO reintentamos: cuenta puede
@@ -1111,20 +1272,14 @@ class CheckJCClient:
     def _cdp_click(self, node_id):
         """Envía un click real en el centro del box del nodo. Funciona aunque
         el nodo viva dentro de un shadow root closed: las coordenadas son
-        globales.
-
-        Antes solo enviábamos mousePressed+mouseReleased sin mover primero el
-        ratón ni indicar el bitmask `buttons`. En esa forma Chromium no
-        siempre sintetiza un `click` real sobre el elemento (hit-test/hover
-        sin resolver), y el handler del componente Stencil no se disparaba:
-        el submit no producía ninguna petición. Ahora hacemos la secuencia
-        completa moved -> pressed(buttons=1) -> released, que es lo que un
-        click humano genera.
+        globales (layout/page coordinates, same as getBoundingClientRect on
+        an unscrolled page).
         """
         box = self._cdp.send("DOM.getBoxModel", {"nodeId": node_id})
         c = box["model"]["content"]
         x = (c[0] + c[2]) / 2
         y = (c[1] + c[5]) / 2
+        logger.info("CDP click at (%.0f, %.0f) for nodeId=%s", x, y, node_id)
         self._cdp.send("Input.dispatchMouseEvent", {
             "type": "mouseMoved", "x": x, "y": y, "buttons": 0,
         })
@@ -1212,6 +1367,39 @@ class CheckJCClient:
             return res.get("result", {}).get("value")
         except Exception as exc:
             return f"<describe failed: {exc}>"
+
+    def _describe_form(self, btn_node_id):
+        """Return action/method/enctype of the <form> ancestor of btn_node_id.
+
+        In the lite anti-bot variant the form may have action='' or no method,
+        which means a native submit would GET the current URL instead of POSTing
+        to the auth endpoint — explaining why we see no POST in REQUESTS ATTEMPTED.
+        """
+        try:
+            obj = self._cdp.send("DOM.resolveNode", {"nodeId": btn_node_id})
+            oid = obj["object"]["objectId"]
+            fn = (
+                "function(){try{"
+                "var f=this.closest('form');"
+                "if(!f)return 'no <form> ancestor';"
+                "return JSON.stringify({"
+                "action:f.getAttribute('action'),"
+                "method:f.getAttribute('method')||f.method,"
+                "enctype:f.getAttribute('enctype'),"
+                "id:f.id||null,"
+                "cls:f.className||null,"
+                "html:f.outerHTML.slice(0,600)"
+                "});"
+                "}catch(e){return 'err:'+e;}}"
+            )
+            res = self._cdp.send("Runtime.callFunctionOn", {
+                "objectId": oid,
+                "functionDeclaration": fn,
+                "returnByValue": True,
+            })
+            return res.get("result", {}).get("value")
+        except Exception as exc:
+            return f"<describe_form failed: {exc}>"
 
     def _find_login_elements(self):
         """Recorre el DOM (incluido shadow DOM closed via pierce=True) y
