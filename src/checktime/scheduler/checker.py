@@ -790,43 +790,57 @@ class CheckJCClient:
         logger.info("Submit button enabled within poll for %s: %s",
                     self.username, enabled)
 
-        # Re-fetch btn_node after the poll: when navigator.webdriver=false is
-        # accepted, Stencil may re-render the shadow DOM, orphaning the nodeId
-        # captured before typing. DOM.resolveNode still resolves detached nodes
-        # (they stay in CDP heap until GC), so disabled=False alone doesn't
-        # prove the node is mounted in the live tree. A fresh DOM walk
-        # guarantees we click the actual mounted element.
-        if enabled:
-            try:
-                _, _, btn_node = self._find_login_elements()
-                self._form_debug.append(f"btn_node_refreshed: {btn_node}")
-                logger.info("Button node refreshed to %s for %s", btn_node, self.username)
-            except Exception as exc:
-                logger.warning("Button re-fetch failed for %s: %s; using original",
-                               self.username, exc)
-                self._form_debug.append(f"btn_node_refresh_failed: {exc}")
+        # Re-find ALL three nodes after the poll. The fresh button nodeId
+        # (vs the one captured before typing) confirms Stencil RE-RENDERED the
+        # form after our keystrokes: we typed into the now-detached
+        # pre-hydration inputs while the LIVE mounted form stayed empty. The
+        # failure screenshot proved it — Chrome's native `required` validation
+        # popped "Please fill out this field" on the password and ABORTED the
+        # POST, which is exactly why no auth request was ever sent. So the
+        # login button works; the blocker is that the live fields are empty.
+        # Re-resolve the live nodes here so the values and the click all target
+        # the same mounted form.
+        try:
+            user_node, pass_node, btn_node = self._find_login_elements()
+            self._form_debug.append(
+                f"refetched_nodes: user={user_node} pass={pass_node} btn={btn_node}"
+            )
+            logger.info("Re-resolved live login nodes for %s: u=%s p=%s b=%s",
+                        self.username, user_node, pass_node, btn_node)
+        except Exception as exc:
+            logger.warning("Live node re-fetch failed for %s: %s; using originals",
+                           self.username, exc)
+            self._form_debug.append(f"refetch_failed: {exc}")
 
-        # Humanizing mouse warmup before clicking submit.
+        # Ensure the LIVE fields actually hold our input. Native `required`
+        # validation gates the POST on these (not on the button's disabled
+        # state), so an empty live field silently blocks the submit. Re-type
+        # into a field ONLY if it reads empty — never append, or we'd corrupt
+        # the password. Two passes max in case the first re-type triggers one
+        # last in-place state sync.
+        for _ in range(2):
+            u_len = self._value_length(user_node)
+            p_len = self._value_length(pass_node)
+            self._form_debug.append(f"live_values: user_len={u_len} pass_len={p_len}")
+            if u_len and p_len:
+                break
+            if not u_len:
+                self._human_type_into(user_node, self.username)
+            if not p_len:
+                self._page.wait_for_timeout(random.randint(150, 400))
+                self._human_type_into(pass_node, self.password)
+            self._dispatch_input_events(user_node)
+            self._dispatch_input_events(pass_node)
+        self._form_debug.append(f"final_user: {self._describe_node(user_node)}")
+        self._form_debug.append(f"final_pass: {self._describe_node(pass_node)}")
+
+        # Humanizing mouse warmup, then a real CDP click on the live button.
+        # (Playwright locators can't pierce a CLOSED shadow DOM, so the
+        # :pierce() attempt was invalid and always fell back here anyway.)
         self._human_mouse_warmup_to(btn_node)
         self._page.wait_for_timeout(random.randint(200, 500))
-
-        # Playwright's pierce locator finds the element via CDP-level DOM
-        # traversal (guaranteed live reference) and dispatches trusted CDP
-        # Input events — more reliable for closed shadow DOM than our manual
-        # DOM.getBoxModel approach with a potentially-stale nodeId.
-        btn_clicked = False
-        try:
-            self._page.locator(":pierce(#btn-login)").click(timeout=5000)
-            btn_clicked = True
-            logger.info("Login button clicked via pierce for %s", self.username)
-        except Exception as exc:
-            logger.warning("Pierce click failed for %s: %s; falling back to CDP",
-                           self.username, exc)
-            self._form_debug.append(f"pierce_click_failed: {exc}")
-
-        if not btn_clicked:
-            self._cdp_click(btn_node)
-            logger.info("Login button clicked via CDP for %s", self.username)
+        self._cdp_click(btn_node)
+        logger.info("Login button clicked via CDP for %s", self.username)
 
         # Esperar a que el navegador salga de /login. Si tras N seg
         # seguimos ahí, fue rechazo. NO reintentamos: cuenta puede
@@ -1319,6 +1333,28 @@ class CheckJCClient:
         except Exception as exc:
             logger.warning("Could not dispatch input events for %s: %s",
                            self.username, exc)
+
+    def _value_length(self, node_id):
+        """Return len(node.value) for an input, or None if it can't be read.
+
+        Used to verify the LIVE form fields actually hold our typed input
+        before submitting (Stencil re-hydration can swap the input nodes,
+        leaving the mounted form empty and the native `required` validation
+        blocking the POST). Reads the live `.value` property, not the HTML
+        attribute, so it reflects what the user "sees" in the field."""
+        try:
+            obj = self._cdp.send("DOM.resolveNode", {"nodeId": node_id})
+            oid = obj["object"]["objectId"]
+            res = self._cdp.send("Runtime.callFunctionOn", {
+                "objectId": oid,
+                "functionDeclaration":
+                    "function(){return (typeof this.value==='string')"
+                    "?this.value.length:0;}",
+                "returnByValue": True,
+            })
+            return res.get("result", {}).get("value")
+        except Exception:
+            return None
 
     def _button_disabled(self, node_id):
         """Return True/False for the node's `disabled` state, or None if it
