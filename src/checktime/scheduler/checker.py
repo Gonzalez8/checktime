@@ -118,8 +118,19 @@ _SEC_CH_UA_PLATFORM = '"Linux"'
 # real host, no macOS mismatch.
 _STEALTH_INIT_SCRIPT_TEMPLATE = """
 (() => {
+  // navigator.webdriver: a REAL Chrome returns `false`, not `undefined`.
+  // Returning undefined (old stealth advice) is itself anomalous and a
+  // sensor that checks `webdriver === false` would still flag us — which is
+  // very likely why CheckJC kept the login button disabled. Force the human
+  // value `false`. (--disable-blink-features=AutomationControlled usually
+  // already yields false; this guarantees it and fixes builds where it's
+  // still true.)
   try {
-    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    if (navigator.webdriver !== false) {
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => false, configurable: true,
+      });
+    }
   } catch (_) {}
   try {
     Object.defineProperty(navigator, 'languages', {
