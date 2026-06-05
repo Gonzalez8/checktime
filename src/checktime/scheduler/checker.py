@@ -622,6 +622,7 @@ class CheckJCClient:
             f"user_input:    {self._describe_node(user_node)}",
             f"pass_input:    {self._describe_node(pass_node)}",
             f"login_button:  {self._describe_node(btn_node)}",
+            f"form_element:  {self._describe_form(btn_node)}",
         ]
         for line in self._form_debug:
             logger.info("FORM DEBUG %s -> %s", self.username, line)
@@ -1141,20 +1142,14 @@ class CheckJCClient:
     def _cdp_click(self, node_id):
         """Envía un click real en el centro del box del nodo. Funciona aunque
         el nodo viva dentro de un shadow root closed: las coordenadas son
-        globales.
-
-        Antes solo enviábamos mousePressed+mouseReleased sin mover primero el
-        ratón ni indicar el bitmask `buttons`. En esa forma Chromium no
-        siempre sintetiza un `click` real sobre el elemento (hit-test/hover
-        sin resolver), y el handler del componente Stencil no se disparaba:
-        el submit no producía ninguna petición. Ahora hacemos la secuencia
-        completa moved -> pressed(buttons=1) -> released, que es lo que un
-        click humano genera.
+        globales (layout/page coordinates, same as getBoundingClientRect on
+        an unscrolled page).
         """
         box = self._cdp.send("DOM.getBoxModel", {"nodeId": node_id})
         c = box["model"]["content"]
         x = (c[0] + c[2]) / 2
         y = (c[1] + c[5]) / 2
+        logger.info("CDP click at (%.0f, %.0f) for nodeId=%s", x, y, node_id)
         self._cdp.send("Input.dispatchMouseEvent", {
             "type": "mouseMoved", "x": x, "y": y, "buttons": 0,
         })
@@ -1242,6 +1237,39 @@ class CheckJCClient:
             return res.get("result", {}).get("value")
         except Exception as exc:
             return f"<describe failed: {exc}>"
+
+    def _describe_form(self, btn_node_id):
+        """Return action/method/enctype of the <form> ancestor of btn_node_id.
+
+        In the lite anti-bot variant the form may have action='' or no method,
+        which means a native submit would GET the current URL instead of POSTing
+        to the auth endpoint — explaining why we see no POST in REQUESTS ATTEMPTED.
+        """
+        try:
+            obj = self._cdp.send("DOM.resolveNode", {"nodeId": btn_node_id})
+            oid = obj["object"]["objectId"]
+            fn = (
+                "function(){try{"
+                "var f=this.closest('form');"
+                "if(!f)return 'no <form> ancestor';"
+                "return JSON.stringify({"
+                "action:f.getAttribute('action'),"
+                "method:f.getAttribute('method')||f.method,"
+                "enctype:f.getAttribute('enctype'),"
+                "id:f.id||null,"
+                "cls:f.className||null,"
+                "html:f.outerHTML.slice(0,600)"
+                "});"
+                "}catch(e){return 'err:'+e;}}"
+            )
+            res = self._cdp.send("Runtime.callFunctionOn", {
+                "objectId": oid,
+                "functionDeclaration": fn,
+                "returnByValue": True,
+            })
+            return res.get("result", {}).get("value")
+        except Exception as exc:
+            return f"<describe_form failed: {exc}>"
 
     def _find_login_elements(self):
         """Recorre el DOM (incluido shadow DOM closed via pierce=True) y
