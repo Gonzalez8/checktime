@@ -826,9 +826,17 @@ class CheckJCClient:
                 break
             if not u_len:
                 self._human_type_into(user_node, self.username)
+                if not self._value_length(user_node):
+                    # Typing didn't stick (focus didn't land on the mounted
+                    # node) — force the value so the POST carries it.
+                    forced = self._set_value_js(user_node, self.username)
+                    self._form_debug.append(f"forced_user_value_len={forced}")
             if not p_len:
                 self._page.wait_for_timeout(random.randint(150, 400))
                 self._human_type_into(pass_node, self.password)
+                if not self._value_length(pass_node):
+                    forced = self._set_value_js(pass_node, self.password)
+                    self._form_debug.append(f"forced_pass_value_len={forced}")
             self._dispatch_input_events(user_node)
             self._dispatch_input_events(pass_node)
         self._form_debug.append(f"final_user: {self._describe_node(user_node)}")
@@ -1354,6 +1362,49 @@ class CheckJCClient:
             })
             return res.get("result", {}).get("value")
         except Exception:
+            return None
+
+    def _set_value_js(self, node_id, text: str):
+        """Force-set an input's value when click+keyboard typing won't stick.
+
+        We saw the live password field stay empty (val_len 0) even after a
+        real click-to-focus + per-char keyboard typing — the focus apparently
+        didn't land on the mounted Stencil-controlled node, so the keystrokes
+        went nowhere and native `required` validation blocked the POST. Since
+        the anti-bot button gate is already satisfied at this point (button
+        enabled), the remaining problem is purely mechanical: get the value
+        into the element the form will submit.
+
+        We use the element's NATIVE value setter (the React/Stencil trick:
+        frameworks patch the instance `value`, so calling the prototype's
+        original setter is what makes their internal value tracker register
+        the change) and then fire input/change/keyup so both the framework
+        and the browser's constraint validation see a non-empty field.
+
+        Returns the resulting value length, or None on failure."""
+        try:
+            obj = self._cdp.send("DOM.resolveNode", {"nodeId": node_id})
+            oid = obj["object"]["objectId"]
+            fn = (
+                "function(v){"
+                "const setter=Object.getOwnPropertyDescriptor("
+                "  window.HTMLInputElement.prototype,'value');"
+                "if(setter&&setter.set){setter.set.call(this,v);}"
+                "else{this.value=v;}"
+                "this.dispatchEvent(new Event('input',{bubbles:true}));"
+                "this.dispatchEvent(new Event('change',{bubbles:true}));"
+                "this.dispatchEvent(new KeyboardEvent('keyup',{bubbles:true}));"
+                "return (typeof this.value==='string')?this.value.length:0;}"
+            )
+            res = self._cdp.send("Runtime.callFunctionOn", {
+                "objectId": oid,
+                "functionDeclaration": fn,
+                "arguments": [{"value": text}],
+                "returnByValue": True,
+            })
+            return res.get("result", {}).get("value")
+        except Exception as exc:
+            logger.warning("JS value-set failed for %s: %s", self.username, exc)
             return None
 
     def _button_disabled(self, node_id):
