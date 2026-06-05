@@ -659,13 +659,43 @@ class CheckJCClient:
         logger.info("Submit button enabled within poll for %s: %s",
                     self.username, enabled)
 
-        # Humanizing mouse warmup before clicking submit: move the pointer
-        # toward the button via a couple of intermediate positions instead
-        # of teleporting. Cheap and avoids the "perfect-stillness" tell.
+        # Re-fetch btn_node after the poll: when navigator.webdriver=false is
+        # accepted, Stencil may re-render the shadow DOM, orphaning the nodeId
+        # captured before typing. DOM.resolveNode still resolves detached nodes
+        # (they stay in CDP heap until GC), so disabled=False alone doesn't
+        # prove the node is mounted in the live tree. A fresh DOM walk
+        # guarantees we click the actual mounted element.
+        if enabled:
+            try:
+                _, _, btn_node = self._find_login_elements()
+                self._form_debug.append(f"btn_node_refreshed: {btn_node}")
+                logger.info("Button node refreshed to %s for %s", btn_node, self.username)
+            except Exception as exc:
+                logger.warning("Button re-fetch failed for %s: %s; using original",
+                               self.username, exc)
+                self._form_debug.append(f"btn_node_refresh_failed: {exc}")
+
+        # Humanizing mouse warmup before clicking submit.
         self._human_mouse_warmup_to(btn_node)
         self._page.wait_for_timeout(random.randint(200, 500))
-        self._cdp_click(btn_node)
-        logger.info("Login button clicked for %s", self.username)
+
+        # Playwright's pierce locator finds the element via CDP-level DOM
+        # traversal (guaranteed live reference) and dispatches trusted CDP
+        # Input events — more reliable for closed shadow DOM than our manual
+        # DOM.getBoxModel approach with a potentially-stale nodeId.
+        btn_clicked = False
+        try:
+            self._page.locator(":pierce(#btn-login)").click(timeout=5000)
+            btn_clicked = True
+            logger.info("Login button clicked via pierce for %s", self.username)
+        except Exception as exc:
+            logger.warning("Pierce click failed for %s: %s; falling back to CDP",
+                           self.username, exc)
+            self._form_debug.append(f"pierce_click_failed: {exc}")
+
+        if not btn_clicked:
+            self._cdp_click(btn_node)
+            logger.info("Login button clicked via CDP for %s", self.username)
 
         # Esperar a que el navegador salga de /login. Si tras N seg
         # seguimos ahí, fue rechazo. NO reintentamos: cuenta puede
