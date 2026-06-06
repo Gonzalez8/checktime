@@ -87,8 +87,12 @@ def _format_error_for_telegram(check_type, username, exc):
         return f"⏳ {base}: sesión perdida durante el fichaje. Reintentará en el próximo ciclo."
     if isinstance(exc, CheckJCCaptchaFailed):
         return (
-            f"🧩 {base}: no se pudo resolver el captcha de verificación. "
-            f"Ficha manualmente en checkjc.com."
+            f"🧩 {base}: el fichaje NO se realizó porque el captcha de "
+            f"verificación no se leyó correctamente — el lector automático "
+            f"(LLM) no reconoció los dígitos con exactitud y CheckJC rechazó "
+            f"la respuesta. No es un bloqueo ni un problema de credenciales. "
+            f"Vuelve a lanzar el fichaje (con un captcha nuevo suele acertar) "
+            f"o fícha manualmente en checkjc.com."
         )
     if isinstance(exc, CheckJCFormError):
         return f"🧩 {base}: CheckJC cambió el HTML — los selectores ya no casan. Requiere actualización del checker."
