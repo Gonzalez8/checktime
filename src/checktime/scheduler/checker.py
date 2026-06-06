@@ -84,8 +84,8 @@ class CheckJCCaptchaFailed(CheckJCError):
 
 
 # Chrome major used to keep UA, Sec-CH-UA client hints and navigator
-# .userAgentData all in lock-step. InfoJC's report (28/05/2026) flagged
-# the literal "HeadlessChrome/135" token; the fix is two-fold:
+# .userAgentData all in lock-step. CheckJC's anti-bot blacklists the
+# literal "HeadlessChrome/NNN" token; the fix is two-fold:
 #   1) run Chromium in the *new* headless mode (no "HeadlessChrome" token
 #      in the UA or client hints), and
 #   2) present a fingerprint that is INTERNALLY COHERENT with the real
@@ -436,7 +436,7 @@ class CheckJCClient:
             args=[
                 # New headless mode: behaves like headful Chrome and, crucially,
                 # drops the "HeadlessChrome" token from the UA and Sec-CH-UA
-                # client hints that InfoJC's IDS blacklisted (report 28/05/2026).
+                # client hints that CheckJC's anti-bot / IDS blacklists.
                 "--headless=new",
                 "--no-sandbox",
                 "--disable-dev-shm-usage",
@@ -624,8 +624,8 @@ class CheckJCClient:
             return True
 
         # Hard cap at 2 total attempts (1 retry) regardless of config:
-        # InfoJC's IDS flagged "rapid consecutive login requests" as one
-        # of the lockout reasons, so we never want to hit /login more
+        # anti-bot / IDS systems flag "rapid consecutive login requests"
+        # as automation, so we never want to hit /login more
         # than twice in a session even if the operator raises the env.
         configured_retries = max(0, get_checkjc_lite_retries())
         max_attempts = min(configured_retries + 1, 2)
@@ -737,9 +737,9 @@ class CheckJCClient:
         # Rellenar inputs con eventos de teclado reales (no Input.insertText).
         # CheckJC v7.4 puede observar la ausencia de keydown/keyup/input por JS
         # del propio Stencil; con insertText el listener interno solo veía un
-        # cambio de value sin cadena de eventos, lo que figuraba en el informe
-        # de InfoJC como "manipulación de campos". `page.keyboard.type` dispara
-        # la secuencia completa que un humano produciría.
+        # cambio de value sin cadena de eventos, lo que el anti-bot / IDS
+        # puede marcar como "manipulación de campos". `page.keyboard.type`
+        # dispara la secuencia completa que un humano produciría.
         self._human_type_into(user_node, self.username)
         # Tab-like pause between fields.
         self._page.wait_for_timeout(random.randint(150, 400))
@@ -893,7 +893,7 @@ class CheckJCClient:
             # READING the distorted captcha before starting to click, and
             # ~0.5-1.5s per click finding the right keypad button. The
             # previous timing (~140ms between clicks, no read pause) was
-            # one of the most obvious bot fingerprints in the InfoJC log.
+            # one of the most obvious bot fingerprints.
             read_min = max(0, get_captcha_read_delay_min_ms())
             read_max = max(read_min, get_captcha_read_delay_max_ms())
             self._page.wait_for_timeout(random.randint(read_min, read_max))
@@ -1159,8 +1159,8 @@ class CheckJCClient:
         and the submit button (#btn-login) never enabled. A real click is the
         honest, human way to hand the field focus — no field/control forcing.
 
-        `Input.insertText` is avoided on purpose (InfoJC flagged it as
-        "manipulation of fields"); per-char random delay also kills the
+        `Input.insertText` is avoided on purpose (anti-bot / IDS can flag
+        it as "manipulation of fields"); per-char random delay also kills the
         constant-cadence fingerprint.
         """
         try:
@@ -1679,9 +1679,9 @@ class CheckJCClient:
     def _account_lock_message(html):
         """Detect CheckJC's per-user account lockout banner.
 
-        Sample text (May 2026):
+        Sample text:
             "No se permitirán nuevos intentos de acceso para el usuario
-             REDACTED_USER hasta dentro de 2 meses, 30 días, 23 horas, 17
+             <usuario> hasta dentro de 2 meses, 30 días, 23 horas, 17
              minutos. Contacte con su supervisor o administrador de la
              plataforma."
 

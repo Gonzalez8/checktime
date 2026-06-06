@@ -3,7 +3,7 @@ Debug del login contra CheckJC sin Playwright y sin pasar por BD.
 Usa solo urllib (stdlib) para descartar problemas del cliente HTTP.
 
 Uso desde el contenedor `app`:
-    python tests/debug_login.py REDACTED_USER REMOVED example-subdomain
+    python tests/debug_login.py <usuario> <password> <subdominio>
 
 Salida esperada:
 - "STATUS 302 LOC .../portal/employee"  -> Login OK

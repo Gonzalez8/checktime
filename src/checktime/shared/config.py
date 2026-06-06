@@ -98,11 +98,11 @@ def get_user_check_stagger_seconds() -> int:
 def get_checkjc_lite_retries() -> int:
     """Extra attempts to retry login when CheckJC serves the 'lite' variant.
 
-    Defaults to 0: NO retry. After the InfoJC May 2026 lockout report
-    flagged "multiple consecutive /login requests" as one of the reasons
-    for the account ban, the operator explicitly opted for zero retries.
-    The hard cap at 2 in code stays as a belt-and-braces guard in case
-    someone raises this in stack.env without thinking it through.
+    Defaults to 0: NO retry. CheckJC's anti-bot flags "multiple
+    consecutive /login requests" as automation, so the safe default is
+    zero retries. The hard cap at 2 in code stays as a belt-and-braces
+    guard in case someone raises this in stack.env without thinking it
+    through.
 
     Trade-off: if CheckJC serves the lite anti-bot variant on the only
     attempt, the fichaje fails for that minute — but no second /login
@@ -124,7 +124,7 @@ def get_schedule_random_offset_minutes() -> int:
     """Per-day deterministic offset of ±X minutes for each user's
     configured check_in / check_out time.
 
-    InfoJC's May 2026 report flagged the always-09:00:XX cadence as a
+    CheckJC's anti-bot flags an always-09:00:XX cadence as a
     bot signal. With this offset enabled, today's effective fichaje
     time for user U is `configured ± random(-X, +X) minutes`, with the
     random seed derived from (user_id, today, check_type). This keeps
@@ -144,7 +144,7 @@ def get_schedule_jitter_seconds() -> int:
 
     Without this, every user fires at exactly HH:MM:00 (modulo the
     inter-user stagger), which is the cron-perfect fingerprint that
-    InfoJC's IDS flagged. Default 30. Set to 0 to disable.
+    anti-bot / IDS systems flag. Default 30. Set to 0 to disable.
     """
     return int(get_config('CHECKJC_SCHEDULE_JITTER_SECONDS', '30'))
 
@@ -152,9 +152,9 @@ def get_post_login_jitter_min_seconds() -> int:
     """Lower bound (inclusive) of the human-think pause between a
     successful login and the actual fichaje click. Default 20.
 
-    The InfoJC report listed our previous behavior (login + fichaje
-    within 1-2 seconds, every day) as a top anomaly. Anything from
-    ~20s upward is plausible "user landed and clicked".
+    A login + fichaje within 1-2 seconds, every day, is a top behavioural
+    anomaly for anti-bot / IDS systems. Anything from ~20s upward is
+    plausible "user landed and clicked".
     """
     return int(get_config('CHECKJC_POST_LOGIN_JITTER_MIN_SECONDS', '20'))
 

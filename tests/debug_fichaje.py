@@ -59,7 +59,7 @@ def main(argv=None):
     parser.add_argument(
         "--no-jitter", action="store_true",
         help="Skip the post-login 20-90s pause. Use only if you know what you're doing — "
-             "the pause is one of the main mitigations against InfoJC's IDS pattern matching.",
+             "the pause is one of the main mitigations against anti-bot / IDS pattern matching.",
     )
     args = parser.parse_args(argv)
 

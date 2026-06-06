@@ -31,7 +31,7 @@ independientemente de la IP o los headers.
 Telegram recibía mensajes con esta pinta:
 
 ```
-❌ Error during check in for user Jose: Message:
+❌ Error during check in for user <usuario>: Message:
 Stacktrace:
 #0 0x5624fe85ea9e <unknown>
 #1 0x5624fe2f4ec1 <unknown>
@@ -98,8 +98,8 @@ Probado y descartado:
 | `urllib` con +5s de delay entre GET y POST | Python TLS | 1.1 | residencial | 302 → /login |
 | `curl` con todos los headers | libcurl | 2 | residencial | 200 con HTML "lite" |
 | `curl_cffi` (impersonate Chrome 147) | Chrome 147 | 3 (QUIC) | residencial | 302 → /login |
-| `curl_cffi` desde NordVPN España | Chrome 147 | 3 | NordVPN ES | 302 → /login |
-| `curl_cffi` desde NordVPN Portugal | Chrome 147 | 3 | NordVPN PT | 302 → /login |
+| `curl_cffi` desde VPN (país A) | Chrome 147 | 3 | VPN | 302 → /login |
+| `curl_cffi` desde VPN (país B) | Chrome 147 | 3 | VPN | 302 → /login |
 | `curl_cffi` desde IP residencial fresca | Chrome 147 | 3 | nueva | 302 → /login |
 | **Chromium real (Playwright)** | Chrome | 2 | residencial | **302 → /portal/employee ✅** |
 
@@ -246,14 +246,14 @@ cual sigue dentro de hora laboral.
 Si en algún despliegue futuro 60 s no fueran suficientes, se sube la
 variable a 90/120 sin redeploy de código. Si CheckJC endureciera el
 anti-bot al punto de no servir login real ni con stagger, habría que
-mirar rotar el exit IP de NordVPN entre usuarios (más complejo, fuera
+mirar rotar la IP de salida entre usuarios (más complejo, fuera
 del scope actual).
 
 ## Lite variant para logins aislados (mayo 2026, v1.7.3)
 
 Tras v1.7.2 vimos que la variante lite también dispara para **logins
 aislados** (un único usuario en su lote). Caso real: 2026-05-18 18:12,
-Jose es el único usuario con checkout a esa hora, no hay segundo
+un único usuario con checkout a esa hora, no hay segundo
 login en la misma IP, y aun así el body llega como 7 778 bytes con
 los 18 elementos del form en markup pero todos 0×0.
 
@@ -283,7 +283,7 @@ Con los defaults, un login en variante lite intenta hasta 3 veces
 con 60 s entre ellas — añade un máximo de 2 minutos al peor caso,
 pero suele recuperarse antes. Si tras los reintentos sigue lite, se
 lanza `CheckJCFormError` indicando que el anti-bot está duro en
-esta IP y sugiere rotar exit NordVPN o subir el delay.
+esta IP y sugiere rotar la IP de salida o subir el delay.
 
 Decisión: **no se reintenta** si el body llega con tamaño normal pero
 los elementos son invisibles — en ese caso es un cambio de DOM real y
@@ -294,8 +294,8 @@ dispara el retry.
 
 La primera versión del retry (v1.7.3) usaba el tamaño del body como
 predicción dura: si `body < 20 KB`, asumía variante lite garantizada
-y se saltaba directo al sleep. En producción vimos un caso (Jose,
-2026-05-18 18:47–18:51) en el que el intento 3 funcionó con body de
+y se saltaba directo al sleep. En producción vimos un caso
+(2026-05-18 18:47–18:51) en el que el intento 3 funcionó con body de
 7 608 bytes — exactamente del mismo tamaño que los dos intentos
 previos que se saltaron sin probar.
 
@@ -314,6 +314,6 @@ Cambio de comportamiento en v1.7.4:
 3. Si `_find_login_elements` falla con body normal, se propaga
    inmediatamente (cambio de DOM real).
 
-Resultado: en el caso de Jose del 18:47 habría fichado en el primer
+Resultado: en el caso del 18:47 habría fichado en el primer
 intento en vez de esperar 4 minutos. Sin coste para los demás
 escenarios.
