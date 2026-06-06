@@ -3,7 +3,7 @@ Test del login usando curl_cffi (TLS fingerprint de Chrome exacto).
 Si esto entra y urllib no, confirmamos que el problema es TLS fingerprint.
 
 Uso:
-    python tests/debug_login_curl_cffi.py 47779708Z Oriotif90 trainingbnetwork
+    python tests/debug_login_curl_cffi.py <usuario> <password> <subdominio>
 """
 import sys
 import re

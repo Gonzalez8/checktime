@@ -3,9 +3,8 @@
 Manual end-to-end test for LLMVisionSolver against a real composite
 captcha image.
 
-Use this while account 47779708z is locked (or whenever the auto flow
-isn't reachable) to confirm that Gemini reads the captcha correctly
-with a given API key + model.
+Use this whenever the auto flow isn't reachable to confirm that Gemini
+reads the captcha correctly with a given API key + model.
 
 Usage:
     # Preferred: pass the key via env var so it never ends up in shell

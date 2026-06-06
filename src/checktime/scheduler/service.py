@@ -246,10 +246,10 @@ def perform_check_for_user(user, check_type):
                 check_type=check_type,
             ) as client:
                 client.login()
-                # Human-think pause between login and fichaje. The InfoJC
-                # report (May 2026) showed our previous behavior fired the
-                # check 1-2s after login every single day — a textbook bot
-                # fingerprint. A random 20-90s pause makes the pattern
+                # Human-think pause between login and fichaje. Firing the
+                # check 1-2s after login every single day is a textbook bot
+                # fingerprint for anti-bot / IDS systems. A random 20-90s
+                # pause makes the pattern
                 # indistinguishable from a real user landing on the
                 # dashboard and clicking after a moment.
                 jitter_min = max(0, get_post_login_jitter_min_seconds())
@@ -292,8 +292,8 @@ def _effective_time_for_today(user_id, configured_time, check_type, today, max_o
 
     Deterministic so within a single day the answer is stable: the
     minute-tick scheduler can match it once and only once, no double
-    fires, no missed minutes. The seed is internal to the app, so
-    InfoJC's IDS can't predict tomorrow's actual time from today's.
+    fires, no missed minutes. The seed is internal to the app, so an
+    external IDS can't predict tomorrow's actual time from today's.
 
     Returns 'HH:MM'. Clamped to [00:00, 23:59] so an early-morning or
     late-night fichaje doesn't roll into the next/previous day.
@@ -333,8 +333,8 @@ def get_users_to_check_now():
         if check_in_time is None or check_out_time is None:
             continue
         # Apply per-day deterministic ±N minute offset to the configured
-        # time. Mitigates the always-HH:MM:00 pattern that InfoJC's IDS
-        # flagged in the May 2026 lockout report.
+        # time. Mitigates the always-HH:MM:00 pattern that anti-bot / IDS
+        # systems flag as automation.
         eff_in = _effective_time_for_today(user.id, check_in_time, "in", today, max_offset)
         eff_out = _effective_time_for_today(user.id, check_out_time, "out", today, max_offset)
 
@@ -388,9 +388,9 @@ def schedule_check():
     # arrive from the same egress IP within seconds. Space users out.
     stagger_seconds = get_user_check_stagger_seconds()
     # Per-firing schedule jitter so the run does NOT begin at HH:MM:00.
-    # InfoJC's IDS explicitly listed the always-09:00:XX cadence as a
-    # bot signal in the May 2026 lockout report; adding 0-30s of random
-    # delay breaks that pattern without affecting attendance accuracy.
+    # Anti-bot / IDS systems flag an always-09:00:XX cadence as a bot
+    # signal; adding 0-30s of random delay breaks that pattern without
+    # affecting attendance accuracy.
     jitter_max = max(0, get_schedule_jitter_seconds())
     for index, (user, check_type) in enumerate(users_to_check):
         if index > 0 and stagger_seconds > 0:

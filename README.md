@@ -15,7 +15,7 @@ limiting, and the 6‑digit verification captcha).
 - [Features](#features)
 - [Architecture](#architecture)
 - [Technology Stack](#technology-stack)
-- [Anti‑detection: the InfoJC lockout report](#anti-detection-the-infojc-lockout-report)
+- [Anti-detection and humanization](#anti-detection-and-humanization)
 - [How the CheckJC captcha is handled](#how-the-checkjc-captcha-is-handled)
 - [Getting Started](#getting-started)
   - [Prerequisites](#prerequisites)
@@ -46,8 +46,8 @@ limiting, and the 6‑digit verification captcha).
 - **Stagger** between consecutive users so a single shared egress IP
   doesn't trip CheckJC's anti‑bot.
 - **Anti‑detection humanization** so the scheduler looks like a real
-  user, not a bot. Layered defences added across the v1.10.x → v1.11
-  series after CheckJC's IDS issued a lockout report in May 2026:
+  user, not a bot. Layered defences tuned to CheckJC's anti‑bot / IDS
+  (see [Anti-detection and humanization](#anti-detection-and-humanization)):
   - **±5 min per‑day deterministic offset** on the configured fichaje
     time (seeded by user + date + check type) so it does not fire at
     `HH:MM:00` every day, plus 0‑30 s extra jitter within the matched
@@ -149,11 +149,12 @@ and business‑logic layer (`shared/services` + `shared/repository`).
 The captcha relay uses a `pending_captcha` table to bridge the
 scheduler (which waits for a reply) and the bot (which receives it).
 
-Production should egress from a **stable, legitimate Spanish IP**.
-> ⚠️ Earlier setups routed the `app` container through Gluetun + NordVPN.
-> Per InfoJC's May 2026 report, those NordVPN IPs were a *cause* of the
-> lockout, not a fix — avoid VPN/datacenter egress. See
-> [Anti‑detection](#anti-detection-the-infojc-lockout-report).
+Production should egress from a **stable, legitimate IP** in the expected
+country.
+> ⚠️ Routing the `app` container through a commercial VPN usually makes
+> detection *worse* (those ranges are well known to anti‑bot systems), so
+> avoid VPN/datacenter egress. See
+> [Anti-detection and humanization](#anti-detection-and-humanization).
 
 ---
 
@@ -175,42 +176,44 @@ Production should egress from a **stable, legitimate Spanish IP**.
 
 ---
 
-## Anti-detection: the InfoJC lockout report
+## Anti-detection and humanization
 
-On **28 May 2026** CheckJC's provider (InfoJC) issued a formal report
-explaining why user `47779708z` was locked out on
-`trainingbnetwork.checkjc.com`. The lockout was attributed to a *sum of
-factors*, not a single cause. CheckTime's anti‑detection work
-(v1.10 → v1.12) is organised directly around eliminating each one. The
-table below is the canonical checklist — review it before pointing the
-bot at a real account.
+CheckJC v7.4 runs an anti‑bot / IDS layer that fingerprints the client
+and watches login behaviour: a lightweight or automated client, a
+"headless" browser signature, manipulated form fields, rapid repeated
+logins, a robotic always‑same‑minute schedule, or an anomalous egress IP
+can all get a user flagged or temporarily locked out. CheckTime is built
+so a scheduled fichaje looks like a real human session. The table below
+maps each known detection vector to how CheckTime handles it — review it
+before relying on the bot for a real account.
 
-| # | Factor flagged by InfoJC | Status | How CheckTime addresses it |
+| # | Detection vector | Status | How CheckTime addresses it |
 |---|---|---|---|
-| 1 | Invalid/expired TLS suite/certificate | ✅ Resolved | Uses a real, current Chromium (rebrowser‑playwright) with a modern, valid TLS stack. The lightweight HTTP clients (urllib/curl_cffi) that triggered this are gone. |
-| 2 | Path scanning + header manipulation during login | ✅ Resolved | Navigates straight to `/login`; sends only the headers a real Chrome sends (UA, Accept‑Language, Sec‑CH‑UA), all internally coherent — nothing injected or anomalous. |
-| 3 | Blacklisted client `HeadlessChrome/135` | ✅ Resolved | `--headless=new` drops the `HeadlessChrome` token; UA / Sec‑CH‑UA / `navigator.userAgentData` are pinned to a coherent `Chrome/136` on Linux, derived from the real engine version. |
+| 1 | Lightweight client / invalid or outdated TLS stack | ✅ Resolved | Uses a real, current Chromium (rebrowser‑playwright) with a modern, valid TLS stack. The lightweight HTTP clients (urllib/curl_cffi) that get flagged are gone. |
+| 2 | Path scanning + anomalous/manipulated request headers | ✅ Resolved | Navigates straight to `/login`; sends only the headers a real Chrome sends (UA, Accept‑Language, Sec‑CH‑UA), all internally coherent — nothing injected or anomalous. |
+| 3 | Blacklisted headless client (e.g. `HeadlessChrome/NNN`) | ✅ Resolved | `--headless=new` drops the `HeadlessChrome` token; UA / Sec‑CH‑UA / `navigator.userAgentData` are pinned to a coherent `Chrome/NNN` on Linux, derived from the real engine version. |
 | 4 | Repeated logins with **wrong credentials** | ✅ Resolved* | Hard cap of **2 attempts per session**, never retries on rejection. *Keep the stored CheckJC password current — a stale one would generate wrong‑credential attempts. |
-| 5 | **Manipulating fields/controls** | ✅ Resolved | Only **real `isTrusted` keystrokes** + native **Enter** submit. All synthetic `dispatchEvent`, forced `.value` setting and CDP `Input.insertText` were removed from the login path in **v1.12.12**. |
+| 5 | **Manipulating fields/controls** | ✅ Resolved | Only **real `isTrusted` keystrokes** + native **Enter** submit. All synthetic `dispatchEvent`, forced `.value` setting and CDP `Input.insertText` were removed from the login path. |
 | 6 | Rapid consecutive logins, no wait, IP hopping | ✅ Resolved | One login per fichaje, ≥60 s backoff between the (max 2) attempts, **no double‑submit**, no IP changes. |
-| 7 | Behavioural pattern: always `09:00:00` ±<1 min, fichaje 1‑2 s after login | ⚠️ Mitigated | ±N‑min per‑day deterministic offset + 0‑30 s jitter; 20‑90 s "human think" pause between login and fichaje; ~10 s human‑cadence typing. Widen the offsets further if you want more spread. |
-| 8 | **Foreign/anomalous/VPN egress IP** (NordVPN, Italy) | ⚠️ Operational | **Not a code setting — it depends on where you host CheckTime.** Egress from a legitimate Spanish residential/business IP. Do **not** route through NordVPN or any VPN/datacenter range: the report explicitly named those NordVPN IPs (ASN 136787, Italy/Panama) as a block trigger. Verify with `curl -s https://ipinfo.io/json` (expect `country: ES`, a normal ISP, not a VPN ASN). |
+| 7 | Robotic schedule pattern (always the same minute; fichaje 1‑2 s after login) | ⚠️ Mitigated | ±N‑min per‑day deterministic offset + 0‑30 s jitter; 20‑90 s "human think" pause between login and fichaje; human‑cadence typing. Widen the offsets further for more spread. |
+| 8 | **Anomalous / VPN / datacenter / foreign egress IP** | ⚠️ Operational | **Not a code setting — it depends on where you host CheckTime.** Egress from a stable, legitimate IP in the company's expected country. Avoid VPN/datacenter/foreign ranges, which anti‑bot systems commonly score as suspicious. Verify with `curl -s https://ipinfo.io/json` (sane `country`, a normal residential/business ISP, not a VPN ASN). |
 
-> **Important — egress IP (factor 8):** earlier versions of this project
-> routed the container through **Gluetun + NordVPN**. The InfoJC report
-> showed that was *counter‑productive*: those NordVPN IPs were among the
-> cited block reasons. The recommended setup is to egress from a stable,
-> legitimate **Spanish** IP and avoid VPN/datacenter ranges entirely.
+> **Note on egress IP (vector 8):** counter‑intuitively, routing through
+> a commercial VPN (e.g. Gluetun + a VPN provider) usually makes this
+> *worse*, not better — those IP ranges are well known to anti‑bot
+> systems. Prefer a stable, legitimate IP in the expected country and
+> avoid VPN/datacenter egress.
 
-### What actually fixed the login (v1.12 series)
+### How the login was made to work (the hard part)
 
-After weeks of `CheckJCLoginRejected` (the browser staying on `/login`
-after submit), the breakthrough chain, in order, was:
+CheckJC's login lives inside a Stencil web component with a **closed**
+Declarative Shadow DOM, behind anti‑bot checks that kept the submit
+button disabled and the browser stuck on `/login`. The chain that made
+it behave like a real browser, in order:
 
 1. **`navigator.webdriver = false`** (not `undefined`). A real Chrome
-   returns `false`; `undefined` is itself anomalous and kept CheckJC's
-   Stencil submit button **disabled**. Forcing the human value enabled
-   the button.
+   returns `false`; `undefined` is itself anomalous and kept the Stencil
+   submit button **disabled**. Forcing the human value enabled it.
 2. **Full fingerprint hardening** — realistic `plugins`/`mimeTypes`,
    complete `chrome.{app,runtime,csi,loadTimes}`,
    `platform`/`vendor`/`hardwareConcurrency`/`deviceMemory`, coherent
@@ -218,12 +221,11 @@ after submit), the breakthrough chain, in order, was:
    every spoof reports `[native code]` instead of its source.
 3. **Live‑field + submit fix** — the password field is a Stencil
    *controlled* input that reconciled back to empty ~1 s after typing.
-   The trigger turned out to be **our own synthetic `input`/`change`
-   events**. Removing them and pressing **Enter immediately** after
-   typing submits the form natively while the value is still present
-   (`POST /login` → `302`). Confirmed end‑to‑end: a deliberately wrong
-   test credential now returns CheckJC's normal *"Credenciales
-   incorrectos"*, proving the whole pipeline works.
+   The trigger was firing **synthetic `input`/`change` events** after
+   typing. Removing them and pressing **Enter immediately** after typing
+   submits the form natively while the value is still present
+   (`POST /login` → `302`), with every event `isTrusted` and no field
+   manipulation.
 
 The net effect: the login now behaves like a real human session
 (`isTrusted` events, native submission, no field manipulation), so
@@ -381,8 +383,7 @@ migrations (logged on startup). Log in with `admin` /
 ## Deployment with the prebuilt image
 
 CI publishes a tagged image to GitHub Container Registry on every
-release tag (`vX.Y.Z`). The same image works for the standard and
-Gluetun (VPN) compose flavours.
+release tag (`vX.Y.Z`). The same image works for both compose flavours.
 
 ```bash
 # Pick a release: https://github.com/Gonzalez8/checktime/releases
@@ -394,12 +395,12 @@ docker compose up -d app
 Two compose files are included:
 
 - `docker-compose.yml` — standard deployment (recommended). Egress from
-  a legitimate Spanish IP.
+  a legitimate IP in the expected country.
 - `docker-compose.gluetun.yml` — routes the `app` container's egress
-  through Gluetun + NordVPN. **Discouraged**: InfoJC's report named
-  those NordVPN IPs as a block trigger (see
-  [Anti‑detection](#anti-detection-the-infojc-lockout-report)). Kept only
-  for reference / alternative non‑VPN egress wiring.
+  through Gluetun + a VPN provider. **Discouraged**: commercial VPN
+  ranges are commonly scored as suspicious by anti‑bot systems (see
+  [Anti-detection and humanization](#anti-detection-and-humanization)).
+  Kept only for reference / alternative egress wiring.
 
 ---
 
@@ -410,14 +411,14 @@ release notes with full details and rationale.
 
 | Version | What it added / fixed |
 |---|---|
-| **v1.12.12** | **Login submit fixed end‑to‑end.** Press **Enter immediately** after typing the password instead of the post‑typing dance (synthetic events, button poll, re‑resolve, click) — those gave the Stencil *controlled* password input ~1 s to reconcile back to empty, so native `required` validation aborted the POST. Now `POST /login` → `302` fires; a wrong test credential correctly returns "Credenciales incorrectos". Removed all field manipulation (synthetic `dispatchEvent`, forced `.value`, `Input.insertText`) from the login path — addresses InfoJC factor 5 |
+| **v1.12.12** | **Login submit fixed end‑to‑end.** Press **Enter immediately** after typing the password instead of the post‑typing dance (synthetic events, button poll, re‑resolve, click) — those gave the Stencil *controlled* password input ~1 s to reconcile back to empty, so native `required` validation aborted the POST. Now `POST /login` → `302` fires and the session reaches the dashboard. Removed all field manipulation (synthetic `dispatchEvent`, forced `.value`, `Input.insertText`) from the login path |
 | v1.12.8–v1.12.11 | **`navigator.webdriver = false`** (was `undefined`, which kept the Stencil submit button disabled). **Full fingerprint hardening**: realistic `plugins`/`mimeTypes`, complete `chrome.{app,runtime,csi,loadTimes}`, `platform`/`vendor`/`hardwareConcurrency`/`deviceMemory`, coherent `screen`/`outerWidth`, `Function.prototype.toString` proxy reporting `[native code]`. Diagnostics: live‑field value checks + `<form>` action/method capture |
 | v1.12.0–v1.12.7 | Switch to **rebrowser‑playwright** (removes the `Runtime.enable` CDP leak anti‑bot stacks detect). UA/Sec‑CH‑UA derived from the real engine version. Per‑user login‑failure dump at `/var/log/checktime/login_failures/<user>.{html,png,txt}` (overwritten each time) surfaced in the **Diagnostics** admin page |
-| **v1.11.0** | **±5 min per‑day deterministic schedule offset** seeded by `(user, date, check_type)` so the fichaje doesn't fire at the same minute every day. **Human captcha timing**: 1‑3 s read pause, 400‑1200 ms between clicks, 600‑1500 ms verify pause before submit. **Dashboard scroll** before clicking `#btn-check`. Targets the "always 09:00:XX" pattern flagged by InfoJC's IDS |
-| v1.10.3 | Default `CHECKJC_LITE_RETRIES=0` — never retry `/login` automatically (hard‑capped to 1 in code). Cleanup of the error message that referenced the now‑removed NordVPN egress |
+| **v1.11.0** | **±5 min per‑day deterministic schedule offset** seeded by `(user, date, check_type)` so the fichaje doesn't fire at the same minute every day. **Human captcha timing**: 1‑3 s read pause, 400‑1200 ms between clicks, 600‑1500 ms verify pause before submit. **Dashboard scroll** before clicking `#btn-check`. Targets the "always same minute" schedule pattern that anti‑bot IDS flag |
+| v1.10.3 | Default `CHECKJC_LITE_RETRIES=0` — never retry `/login` automatically (hard‑capped to 1 in code) |
 | v1.10.2 | `tests/debug_fichaje.py`: on‑demand standalone script that runs login + post‑login pause + check through the real `CheckJCClient`, mirroring the scheduler path. Useful for validating mitigations without waiting for the scheduled minute |
 | v1.10.1 | **Per‑user Gemini captcha debug dump** at `/var/log/checktime/captcha_dumps/<user>.{png,txt}` overwritten on every call. Always logs Gemini's raw reply, `finishReason`, `promptFeedback`, `usageMetadata`. Composite image preserved for visual inspection. Disk footprint bounded by user count, not fichaje count |
-| **v1.10.0** | **Humanize CheckJC login** end‑to‑end after the InfoJC May 2026 lockout report: stealth init script (`navigator.webdriver` + plugins), real keystroke events instead of CDP `Input.insertText`, mouse warmup with intermediate positions, viewport randomization, schedule jitter (0‑30 s), post‑login human pause (20‑90 s), lite‑variant retry hard‑cap with exponential backoff. Plus `logging_job=checktime` Docker label so Promtail pins `job="checktime"` in Loki |
+| **v1.10.0** | **Humanize CheckJC login** end‑to‑end against CheckJC's anti‑bot: stealth init script (`navigator.webdriver` + plugins), real keystroke events instead of CDP `Input.insertText`, mouse warmup with intermediate positions, viewport randomization, schedule jitter (0‑30 s), post‑login human pause (20‑90 s), lite‑variant retry hard‑cap with exponential backoff. Plus `logging_job=checktime` Docker label so Promtail pins `job="checktime"` in Loki |
 | v1.9.6 | Default Gemini model `gemini-2.5-flash-lite`, `thinkingBudget=0` for compatibility with `gemini-2.5-flash`, bigger `maxOutputTokens` |
 | v1.9.5 | Detect CheckJC per‑user account lockout banner; back off retries that contributed to bans |
 | v1.9.4 | Extra Stencil hydration wait before submit on lite‑variant bodies *(retry portion reverted in 1.9.5)* |
