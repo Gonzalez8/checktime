@@ -935,9 +935,18 @@ class CheckJCClient:
                 return
 
             if "/login" in self._page.url:
-                raise CheckJCSessionLost(
-                    f"Lost session after captcha submit for {self.username} "
-                    f"(redirected back to /login)."
+                # Bounced back to /login right after submitting the keypad
+                # sequence = CheckJC rejected the verification. In practice
+                # this means the answer was WRONG, i.e. the solver (the LLM)
+                # did not read the distorted captcha exactly. Classify it as a
+                # captcha failure (not a generic session loss) so the operator
+                # gets a clear "the captcha couldn't be read" message.
+                raise CheckJCCaptchaFailed(
+                    f"Captcha rejected for {self.username}: CheckJC bounced "
+                    f"back to /login after the keypad sequence, so the answer "
+                    f"was wrong — the automatic reader (LLM) did not read the "
+                    f"captcha digits exactly. A fresh captcha (re-run) usually "
+                    f"succeeds."
                 )
 
             # Still on /verification: wrong digits. Retry with a new captcha.
