@@ -40,9 +40,9 @@
                                     {% endif %}
                                 </div>
                                 {% if row.captcha.png %}
-                                    <a href="{{ url_for('admin.diagnostics_file', category='captcha', username=row.username, ext='png') }}"
+                                    <a href="{{ url_for('admin.diagnostics_file', category='captcha', username=row.username, ext='png', v=row.captcha.mtime|int) }}"
                                        target="_blank" class="d-inline-block me-2">
-                                        <img src="{{ url_for('admin.diagnostics_file', category='captcha', username=row.username, ext='png') }}"
+                                        <img src="{{ url_for('admin.diagnostics_file', category='captcha', username=row.username, ext='png', v=row.captcha.mtime|int) }}"
                                              alt="captcha {{ row.username }}"
                                              style="max-width: 220px; max-height: 110px; border: 1px solid #ddd;">
                                     </a>
@@ -68,9 +68,9 @@
                                     {% endif %}
                                 </div>
                                 {% if row.login_failure.png %}
-                                    <a href="{{ url_for('admin.diagnostics_file', category='login_failure', username=row.login_username, ext='png') }}"
+                                    <a href="{{ url_for('admin.diagnostics_file', category='login_failure', username=row.login_username, ext='png', v=row.login_failure.mtime|int) }}"
                                        target="_blank" class="d-inline-block me-2">
-                                        <img src="{{ url_for('admin.diagnostics_file', category='login_failure', username=row.login_username, ext='png') }}"
+                                        <img src="{{ url_for('admin.diagnostics_file', category='login_failure', username=row.login_username, ext='png', v=row.login_failure.mtime|int) }}"
                                              alt="login failure {{ row.username }}"
                                              style="max-width: 220px; max-height: 110px; border: 1px solid #ddd;">
                                     </a>
