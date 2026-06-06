@@ -745,110 +745,37 @@ class CheckJCClient:
         self._page.wait_for_timeout(random.randint(150, 400))
         self._human_type_into(pass_node, self.password)
 
-        # Snapshot the form right before submit so a rejected login dump
-        # shows the real structure (button type, <form> ancestor) and
-        # whether the inputs hold the values we typed. Read-only.
+        # Submit like a human: press Enter while the password field still has
+        # focus, IMMEDIATELY after the last char — no CDP calls in between.
+        #
+        # The logs proved the live password is a Stencil "controlled" input
+        # that reconciles back to EMPTY ~1s after we type (val_len 14 at T,
+        # 0 at T+1s). Anything we did between typing and submitting (snapshot
+        # describe, dispatch synthetic events, re-resolve nodes, mouse warmup,
+        # the 15s button poll) gave it time to clear, so native `required`
+        # validation aborted the POST ("Please fill out this field").
+        #
+        # Pressing Enter right now fires the form's native implicit submission
+        # while the value is still present, and every event stays
+        # isTrusted=true — no field manipulation, the most human path. The
+        # submit button (#btn-login) is already enabled (webdriver=false), and
+        # implicit submission activates it without needing a click.
+        self._page.keyboard.press("Enter")
+        logger.info("Submitted login via Enter for %s", self.username)
+
+        # Diagnostics AFTER the submit (the value may already have reconciled
+        # to empty by the time these reads run — that's expected). The real
+        # success signal is whether a POST to /login shows up in REQUESTS
+        # ATTEMPTED, not these snapshots.
         self._form_debug = [
             f"user_input:    {self._describe_node(user_node)}",
             f"pass_input:    {self._describe_node(pass_node)}",
             f"login_button:  {self._describe_node(btn_node)}",
             f"form_element:  {self._describe_form(btn_node)}",
+            "submit_method: keyboard Enter (immediate, isTrusted)",
         ]
         for line in self._form_debug:
             logger.info("FORM DEBUG %s -> %s", self.username, line)
-
-        # The submit button (#btn-login) ships `disabled` and is enabled by
-        # the form's own validation once both fields are valid. We observed
-        # it staying disabled even with both fields filled (val_len 9/21):
-        # Stencil attaches that validation listener AFTER its late hydration,
-        # so the input events from our initial keystrokes fired before the
-        # listener existed and the button never re-evaluated. Re-fire
-        # input/change now (listener is attached by submit time) so the
-        # button enables, then record whether it worked.
-        self._dispatch_input_events(user_node)
-        self._dispatch_input_events(pass_node)
-
-        # Wait — like a patient human — for the form's own validation to
-        # enable the submit button, polling its disabled state once a second.
-        # This both (a) FIXES the case where the button enables a few seconds
-        # after we type (we were clicking too early) and (b) DIAGNOSES the
-        # other case: if it stays disabled for the full window, the gate is
-        # not timing but the component/sensor refusing our input. Pure
-        # observation — nothing is forced.
-        enabled = False
-        self._form_debug.append("button_enable_poll:")
-        for i in range(15):
-            dis = self._button_disabled(btn_node)
-            self._form_debug.append(f"  t+{i}s disabled={dis}")
-            if dis is False:
-                enabled = True
-                break
-            self._page.wait_for_timeout(1000)
-        self._form_debug.append(
-            f"login_button_after_events: {self._describe_node(btn_node)}"
-        )
-        logger.info("Submit button enabled within poll for %s: %s",
-                    self.username, enabled)
-
-        # Re-find ALL three nodes after the poll. The fresh button nodeId
-        # (vs the one captured before typing) confirms Stencil RE-RENDERED the
-        # form after our keystrokes: we typed into the now-detached
-        # pre-hydration inputs while the LIVE mounted form stayed empty. The
-        # failure screenshot proved it — Chrome's native `required` validation
-        # popped "Please fill out this field" on the password and ABORTED the
-        # POST, which is exactly why no auth request was ever sent. So the
-        # login button works; the blocker is that the live fields are empty.
-        # Re-resolve the live nodes here so the values and the click all target
-        # the same mounted form.
-        try:
-            user_node, pass_node, btn_node = self._find_login_elements()
-            self._form_debug.append(
-                f"refetched_nodes: user={user_node} pass={pass_node} btn={btn_node}"
-            )
-            logger.info("Re-resolved live login nodes for %s: u=%s p=%s b=%s",
-                        self.username, user_node, pass_node, btn_node)
-        except Exception as exc:
-            logger.warning("Live node re-fetch failed for %s: %s; using originals",
-                           self.username, exc)
-            self._form_debug.append(f"refetch_failed: {exc}")
-
-        # Ensure the LIVE fields actually hold our input. Native `required`
-        # validation gates the POST on these (not on the button's disabled
-        # state), so an empty live field silently blocks the submit. Re-type
-        # into a field ONLY if it reads empty — never append, or we'd corrupt
-        # the password. Two passes max in case the first re-type triggers one
-        # last in-place state sync.
-        for _ in range(2):
-            u_len = self._value_length(user_node)
-            p_len = self._value_length(pass_node)
-            self._form_debug.append(f"live_values: user_len={u_len} pass_len={p_len}")
-            if u_len and p_len:
-                break
-            if not u_len:
-                self._human_type_into(user_node, self.username)
-                if not self._value_length(user_node):
-                    # Typing didn't stick (focus didn't land on the mounted
-                    # node) — force the value so the POST carries it.
-                    forced = self._set_value_js(user_node, self.username)
-                    self._form_debug.append(f"forced_user_value_len={forced}")
-            if not p_len:
-                self._page.wait_for_timeout(random.randint(150, 400))
-                self._human_type_into(pass_node, self.password)
-                if not self._value_length(pass_node):
-                    forced = self._set_value_js(pass_node, self.password)
-                    self._form_debug.append(f"forced_pass_value_len={forced}")
-            self._dispatch_input_events(user_node)
-            self._dispatch_input_events(pass_node)
-        self._form_debug.append(f"final_user: {self._describe_node(user_node)}")
-        self._form_debug.append(f"final_pass: {self._describe_node(pass_node)}")
-
-        # Humanizing mouse warmup, then a real CDP click on the live button.
-        # (Playwright locators can't pierce a CLOSED shadow DOM, so the
-        # :pierce() attempt was invalid and always fell back here anyway.)
-        self._human_mouse_warmup_to(btn_node)
-        self._page.wait_for_timeout(random.randint(200, 500))
-        self._cdp_click(btn_node)
-        logger.info("Login button clicked via CDP for %s", self.username)
 
         # Esperar a que el navegador salga de /login. Si tras N seg
         # seguimos ahí, fue rechazo. NO reintentamos: cuenta puede
