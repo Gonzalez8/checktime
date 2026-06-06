@@ -199,6 +199,27 @@ def get_captcha_submit_delay_max_ms() -> int:
     """Maximum pause before submit. Default 1500ms."""
     return int(get_config('CHECKJC_CAPTCHA_SUBMIT_DELAY_MAX_MS', '1500'))
 
+def get_captcha_retry_attempts() -> int:
+    """Extra full-flow retries when the captcha is REJECTED (the LLM misread
+    the distorted digits and CheckJC bounced us back to /login).
+
+    Each retry is a brand-new session: fresh login + a fresh captcha image,
+    which the LLM usually reads correctly the second time. Since the captcha
+    is rejected BEFORE reaching the dashboard, no fichaje was registered, so
+    retrying can never double-punch.
+
+    Default 0 (opt-in) — current behaviour: notify and stop. Set to 1 (or 2)
+    to auto-retry. Hard-capped at 2 in code: retries are spaced by
+    `get_captcha_retry_delay_seconds()` so they never look like the "rapid
+    consecutive logins" pattern anti-bot systems flag.
+    """
+    return min(2, max(0, int(get_config('CHECKJC_CAPTCHA_RETRY_ATTEMPTS', '0'))))
+
+def get_captcha_retry_delay_seconds() -> int:
+    """Seconds to wait before each captcha retry (see above). Default 45.
+    Keeps the retry well clear of the rapid-login window."""
+    return max(0, int(get_config('CHECKJC_CAPTCHA_RETRY_DELAY_SECONDS', '45')))
+
 # Logging configuration
 def get_log_level() -> str:
     """Get the logging level"""

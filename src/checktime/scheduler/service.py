@@ -30,6 +30,8 @@ from checktime.scheduler.captcha_solver import (
 )
 from checktime.shared.repository.day_override_repository import DayOverrideRepository
 from checktime.shared.config import (
+    get_captcha_retry_attempts,
+    get_captcha_retry_delay_seconds,
     get_log_level,
     get_post_login_jitter_max_seconds,
     get_post_login_jitter_min_seconds,
@@ -237,44 +239,65 @@ def perform_check_for_user(user, check_type):
             # otherwise (or on LLM failure) fall through to the Telegram
             # human relay. TelegramHumanSolver is unchanged and remains
             # the safety net so today's working flow stays intact.
-            captcha_solver = HybridCaptchaSolver(
-                llm=LLMVisionSolver(),
-                telegram=TelegramHumanSolver(telegram_client=telegram_client),
-            )
-            with CheckJCClient(
-                username=user.checkjc_username,
-                password=user.checkjc_password,
-                subdomain=user.checkjc_subdomain,
-                captcha_solver=captcha_solver,
-                user=user,
-                check_type=check_type,
-            ) as client:
-                client.login()
-                # Human-think pause between login and fichaje. Firing the
-                # check 1-2s after login every single day is a textbook bot
-                # fingerprint for anti-bot / IDS systems. A random 20-90s
-                # pause makes the pattern
-                # indistinguishable from a real user landing on the
-                # dashboard and clicking after a moment.
-                jitter_min = max(0, get_post_login_jitter_min_seconds())
-                jitter_max = max(jitter_min, get_post_login_jitter_max_seconds())
-                if jitter_max > 0:
-                    pause_s = random.uniform(jitter_min, jitter_max)
-                    logger.info(
-                        "Post-login human pause for %s: sleeping %.1fs "
-                        "before fichaje", user.username, pause_s,
+            # Opt-in auto-retry when the captcha is REJECTED (the LLM misread
+            # the distorted digits and CheckJC bounced us back to /login). A
+            # fresh session gets a fresh captcha, which the reader usually
+            # gets right. Only CheckJCCaptchaFailed is retried — never
+            # credential/lock/IP errors — and only AFTER a delay so it never
+            # resembles the rapid-consecutive-login pattern. Default 0 retries
+            # (notify-and-stop) unless CHECKJC_CAPTCHA_RETRY_ATTEMPTS is set.
+            captcha_attempts = get_captcha_retry_attempts() + 1
+            captcha_delay_s = get_captcha_retry_delay_seconds()
+            for _attempt in range(1, captcha_attempts + 1):
+                try:
+                    captcha_solver = HybridCaptchaSolver(
+                        llm=LLMVisionSolver(),
+                        telegram=TelegramHumanSolver(telegram_client=telegram_client),
                     )
-                    time.sleep(pause_s)
-                if check_type == "in":
-                    client.check_in()
-                    icon = "🟢"
-                else:
-                    client.check_out()
-                    icon = "🔴"
-                logger.info(f"{check_type.capitalize()} check completed successfully for user {user.username}.")
-                if hasattr(user, 'telegram_chat_id') and user.telegram_chat_id:
-                    if (hasattr(user, 'telegram_chat_id') and user.telegram_chat_id and getattr(user, 'telegram_notifications_enabled', False)):
-                        telegram_client.send_message(f"{icon} Check {check_type} completed successfully", chat_id=user.telegram_chat_id)
+                    with CheckJCClient(
+                        username=user.checkjc_username,
+                        password=user.checkjc_password,
+                        subdomain=user.checkjc_subdomain,
+                        captcha_solver=captcha_solver,
+                        user=user,
+                        check_type=check_type,
+                    ) as client:
+                        client.login()
+                        # Human-think pause between login and fichaje. Firing
+                        # the check 1-2s after login every single day is a
+                        # textbook bot fingerprint for anti-bot / IDS systems.
+                        # A random 20-90s pause makes the pattern
+                        # indistinguishable from a real user landing on the
+                        # dashboard and clicking after a moment.
+                        jitter_min = max(0, get_post_login_jitter_min_seconds())
+                        jitter_max = max(jitter_min, get_post_login_jitter_max_seconds())
+                        if jitter_max > 0:
+                            pause_s = random.uniform(jitter_min, jitter_max)
+                            logger.info(
+                                "Post-login human pause for %s: sleeping %.1fs "
+                                "before fichaje", user.username, pause_s,
+                            )
+                            time.sleep(pause_s)
+                        if check_type == "in":
+                            client.check_in()
+                            icon = "🟢"
+                        else:
+                            client.check_out()
+                            icon = "🔴"
+                        logger.info(f"{check_type.capitalize()} check completed successfully for user {user.username}.")
+                        if hasattr(user, 'telegram_chat_id') and user.telegram_chat_id:
+                            if (hasattr(user, 'telegram_chat_id') and user.telegram_chat_id and getattr(user, 'telegram_notifications_enabled', False)):
+                                telegram_client.send_message(f"{icon} Check {check_type} completed successfully", chat_id=user.telegram_chat_id)
+                    break  # fichaje OK → salir del bucle de reintento
+                except CheckJCCaptchaFailed:
+                    if _attempt >= captcha_attempts:
+                        raise  # agotados los reintentos → notifica el error claro
+                    logger.warning(
+                        "Captcha rejected for %s (attempt %d/%d): the reader "
+                        "misread it. Retrying with a fresh captcha in %ds.",
+                        user.username, _attempt, captcha_attempts, captcha_delay_s,
+                    )
+                    time.sleep(captcha_delay_s)
         except Exception as e:
             # logger.exception incluye el traceback completo: tipo de excepción,
             # mensaje y línea exacta donde se lanzó. Va al fichero y a stdout.
