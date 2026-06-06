@@ -15,6 +15,7 @@ limiting, and the 6‑digit verification captcha).
 - [Features](#features)
 - [Architecture](#architecture)
 - [Technology Stack](#technology-stack)
+- [Anti‑detection: the InfoJC lockout report](#anti-detection-the-infojc-lockout-report)
 - [How the CheckJC captcha is handled](#how-the-checkjc-captcha-is-handled)
 - [Getting Started](#getting-started)
   - [Prerequisites](#prerequisites)
@@ -54,11 +55,17 @@ limiting, and the 6‑digit verification captcha).
   - **20‑90 s "human think" pause** between login and the actual
     fichaje click (was 1‑2 s — the most damning pattern in the report).
   - **Human‑cadence keystrokes** (60‑180 ms per char, real
-    `keydown`/`keypress`/`keyup`) instead of the previous CDP
-    `Input.insertText` that fired no events.
+    `isTrusted` `keydown`/`keypress`/`keyup`) instead of the previous CDP
+    `Input.insertText` that fired no events, followed by an **immediate
+    native Enter** submit (no field manipulation — see below).
   - **Mouse warmup** with intermediate positions before clicks.
-  - **Stealth init script** hiding `navigator.webdriver`, normalising
-    `languages`/`plugins`, adding the `chrome` object.
+  - **Stealth init script** with `navigator.webdriver = false` (the human
+    value, not `undefined`), realistic `plugins`/`mimeTypes`, full
+    `chrome.{app,runtime,csi,loadTimes}`, coherent
+    `platform`/`vendor`/`screen`/`userAgentData`, and a
+    `Function.prototype.toString` proxy so the spoofs report
+    `[native code]`.
+  - **rebrowser‑playwright** to remove the `Runtime.enable` CDP leak.
   - **Real Chrome UA** + randomized viewport + Spanish locale/timezone.
   - **Human captcha timing**: 1‑3 s "reading" pause, 0.4‑1.2 s between
     keypad clicks, 0.6‑1.5 s "verifying" pause before submit.
@@ -142,9 +149,11 @@ and business‑logic layer (`shared/services` + `shared/repository`).
 The captcha relay uses a `pending_captcha` table to bridge the
 scheduler (which waits for a reply) and the bot (which receives it).
 
-Production typically runs the `app` container behind a VPN (Gluetun +
-NordVPN) so CheckJC sees a known egress IP. Both compose flavours are
-included.
+Production should egress from a **stable, legitimate Spanish IP**.
+> ⚠️ Earlier setups routed the `app` container through Gluetun + NordVPN.
+> Per InfoJC's May 2026 report, those NordVPN IPs were a *cause* of the
+> lockout, not a fix — avoid VPN/datacenter egress. See
+> [Anti‑detection](#anti-detection-the-infojc-lockout-report).
 
 ---
 
@@ -163,6 +172,63 @@ included.
 - **Deployment**: Docker, Docker Compose, Gunicorn, Supervisord;
   prebuilt images on **GitHub Container Registry**
   (`ghcr.io/gonzalez8/checktime`).
+
+---
+
+## Anti-detection: the InfoJC lockout report
+
+On **28 May 2026** CheckJC's provider (InfoJC) issued a formal report
+explaining why user `REDACTED_USER` was locked out on
+`example-subdomain.checkjc.com`. The lockout was attributed to a *sum of
+factors*, not a single cause. CheckTime's anti‑detection work
+(v1.10 → v1.12) is organised directly around eliminating each one. The
+table below is the canonical checklist — review it before pointing the
+bot at a real account.
+
+| # | Factor flagged by InfoJC | Status | How CheckTime addresses it |
+|---|---|---|---|
+| 1 | Invalid/expired TLS suite/certificate | ✅ Resolved | Uses a real, current Chromium (rebrowser‑playwright) with a modern, valid TLS stack. The lightweight HTTP clients (urllib/curl_cffi) that triggered this are gone. |
+| 2 | Path scanning + header manipulation during login | ✅ Resolved | Navigates straight to `/login`; sends only the headers a real Chrome sends (UA, Accept‑Language, Sec‑CH‑UA), all internally coherent — nothing injected or anomalous. |
+| 3 | Blacklisted client `HeadlessChrome/135` | ✅ Resolved | `--headless=new` drops the `HeadlessChrome` token; UA / Sec‑CH‑UA / `navigator.userAgentData` are pinned to a coherent `Chrome/136` on Linux, derived from the real engine version. |
+| 4 | Repeated logins with **wrong credentials** | ✅ Resolved* | Hard cap of **2 attempts per session**, never retries on rejection. *Keep the stored CheckJC password current — a stale one would generate wrong‑credential attempts. |
+| 5 | **Manipulating fields/controls** | ✅ Resolved | Only **real `isTrusted` keystrokes** + native **Enter** submit. All synthetic `dispatchEvent`, forced `.value` setting and CDP `Input.insertText` were removed from the login path in **v1.12.12**. |
+| 6 | Rapid consecutive logins, no wait, IP hopping | ✅ Resolved | One login per fichaje, ≥60 s backoff between the (max 2) attempts, **no double‑submit**, no IP changes. |
+| 7 | Behavioural pattern: always `09:00:00` ±<1 min, fichaje 1‑2 s after login | ⚠️ Mitigated | ±N‑min per‑day deterministic offset + 0‑30 s jitter; 20‑90 s "human think" pause between login and fichaje; ~10 s human‑cadence typing. Widen the offsets further if you want more spread. |
+| 8 | **Foreign/anomalous/VPN egress IP** (NordVPN, Italy) | ⚠️ Operational | **Not a code setting — it depends on where you host CheckTime.** Egress from a legitimate Spanish residential/business IP. Do **not** route through NordVPN or any VPN/datacenter range: the report explicitly named those NordVPN IPs (ASN 136787, Italy/Panama) as a block trigger. Verify with `curl -s https://ipinfo.io/json` (expect `country: ES`, a normal ISP, not a VPN ASN). |
+
+> **Important — egress IP (factor 8):** earlier versions of this project
+> routed the container through **Gluetun + NordVPN**. The InfoJC report
+> showed that was *counter‑productive*: those NordVPN IPs were among the
+> cited block reasons. The recommended setup is to egress from a stable,
+> legitimate **Spanish** IP and avoid VPN/datacenter ranges entirely.
+
+### What actually fixed the login (v1.12 series)
+
+After weeks of `CheckJCLoginRejected` (the browser staying on `/login`
+after submit), the breakthrough chain, in order, was:
+
+1. **`navigator.webdriver = false`** (not `undefined`). A real Chrome
+   returns `false`; `undefined` is itself anomalous and kept CheckJC's
+   Stencil submit button **disabled**. Forcing the human value enabled
+   the button.
+2. **Full fingerprint hardening** — realistic `plugins`/`mimeTypes`,
+   complete `chrome.{app,runtime,csi,loadTimes}`,
+   `platform`/`vendor`/`hardwareConcurrency`/`deviceMemory`, coherent
+   `screen`/`outerWidth`, and a `Function.prototype.toString` proxy so
+   every spoof reports `[native code]` instead of its source.
+3. **Live‑field + submit fix** — the password field is a Stencil
+   *controlled* input that reconciled back to empty ~1 s after typing.
+   The trigger turned out to be **our own synthetic `input`/`change`
+   events**. Removing them and pressing **Enter immediately** after
+   typing submits the form natively while the value is still present
+   (`POST /login` → `302`). Confirmed end‑to‑end: a deliberately wrong
+   test credential now returns CheckJC's normal *"Credenciales
+   incorrectos"*, proving the whole pipeline works.
+
+The net effect: the login now behaves like a real human session
+(`isTrusted` events, native submission, no field manipulation), so
+factors 1‑6 above are addressed in code. Factors 7 (behavioural) and 8
+(egress IP) are the operational knobs left to the deployer.
 
 ---
 
@@ -327,9 +393,13 @@ docker compose up -d app
 
 Two compose files are included:
 
-- `docker-compose.yml` — standard deployment.
+- `docker-compose.yml` — standard deployment (recommended). Egress from
+  a legitimate Spanish IP.
 - `docker-compose.gluetun.yml` — routes the `app` container's egress
-  through Gluetun + NordVPN so CheckJC sees a stable, known IP.
+  through Gluetun + NordVPN. **Discouraged**: InfoJC's report named
+  those NordVPN IPs as a block trigger (see
+  [Anti‑detection](#anti-detection-the-infojc-lockout-report)). Kept only
+  for reference / alternative non‑VPN egress wiring.
 
 ---
 
@@ -340,6 +410,9 @@ release notes with full details and rationale.
 
 | Version | What it added / fixed |
 |---|---|
+| **v1.12.12** | **Login submit fixed end‑to‑end.** Press **Enter immediately** after typing the password instead of the post‑typing dance (synthetic events, button poll, re‑resolve, click) — those gave the Stencil *controlled* password input ~1 s to reconcile back to empty, so native `required` validation aborted the POST. Now `POST /login` → `302` fires; a wrong test credential correctly returns "Credenciales incorrectos". Removed all field manipulation (synthetic `dispatchEvent`, forced `.value`, `Input.insertText`) from the login path — addresses InfoJC factor 5 |
+| v1.12.8–v1.12.11 | **`navigator.webdriver = false`** (was `undefined`, which kept the Stencil submit button disabled). **Full fingerprint hardening**: realistic `plugins`/`mimeTypes`, complete `chrome.{app,runtime,csi,loadTimes}`, `platform`/`vendor`/`hardwareConcurrency`/`deviceMemory`, coherent `screen`/`outerWidth`, `Function.prototype.toString` proxy reporting `[native code]`. Diagnostics: live‑field value checks + `<form>` action/method capture |
+| v1.12.0–v1.12.7 | Switch to **rebrowser‑playwright** (removes the `Runtime.enable` CDP leak anti‑bot stacks detect). UA/Sec‑CH‑UA derived from the real engine version. Per‑user login‑failure dump at `/var/log/checktime/login_failures/<user>.{html,png,txt}` (overwritten each time) surfaced in the **Diagnostics** admin page |
 | **v1.11.0** | **±5 min per‑day deterministic schedule offset** seeded by `(user, date, check_type)` so the fichaje doesn't fire at the same minute every day. **Human captcha timing**: 1‑3 s read pause, 400‑1200 ms between clicks, 600‑1500 ms verify pause before submit. **Dashboard scroll** before clicking `#btn-check`. Targets the "always 09:00:XX" pattern flagged by InfoJC's IDS |
 | v1.10.3 | Default `CHECKJC_LITE_RETRIES=0` — never retry `/login` automatically (hard‑capped to 1 in code). Cleanup of the error message that referenced the now‑removed NordVPN egress |
 | v1.10.2 | `tests/debug_fichaje.py`: on‑demand standalone script that runs login + post‑login pause + check through the real `CheckJCClient`, mirroring the scheduler path. Useful for validating mitigations without waiting for the scheduled minute |
